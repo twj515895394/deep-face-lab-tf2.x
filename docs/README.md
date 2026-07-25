@@ -1,6 +1,6 @@
 # DeepFaceLab TF2.x 文档总索引与演进大纲
 
-> 文档版本：v1.0  
+> 文档版本：v1.1  
 > 更新日期：2026-07-25  
 > 作用：统一管理项目分析、优化设计、验证方案和未来 UI 服务化文档。
 
@@ -42,21 +42,28 @@ Phase 3：Linux 后端服务化与前端 UI
 2. [TF2.x 升级实现分析](analysis/dfl-tf2-upgrade-analysis.md)
 3. [实现状态与风险矩阵](analysis/implementation-status-and-risk-matrix.md)
 
-### 2.2 开始训练优化
+### 2.2 按完整业务流程阅读
+
+1. [Extract / 切脸架构分析](analysis/extraction-architecture-analysis.md)
+2. [训练架构分析](analysis/training-architecture-analysis.md)
+3. [Merge / 合成架构分析](analysis/merging-architecture-analysis.md)
+
+### 2.3 开始训练优化
 
 1. [训练架构分析](analysis/training-architecture-analysis.md)
-2. [训练算法优化候选方案](design/dfl-training-algorithm-optimizations.md)
-3. `optimization/training-correctness-audit.md`（下一份重点文档，待创建）
-4. `validation/training-benchmark-specification.md`（待创建）
+2. [实现状态与风险矩阵](analysis/implementation-status-and-risk-matrix.md)
+3. [训练算法优化候选方案](design/dfl-training-algorithm-optimizations.md)
+4. `optimization/training-correctness-audit.md`（下一份重点文档，待创建）
+5. `validation/training-benchmark-specification.md`（待创建）
 
-### 2.3 了解已有升级设想
+### 2.4 了解已有升级设想
 
 1. [TF2 升级优势分析](design/dfl-tf2-upgrade-advantages-analysis.md)
 2. [训练算法优化候选方案](design/dfl-training-algorithm-optimizations.md)
 
 > 注意：`design/` 下的文档包含候选方案和预期收益，不代表功能已经完成或收益已经验证。真实实现状态以 `analysis/implementation-status-and-risk-matrix.md` 为准。
 
-### 2.4 未来 UI 与 Linux 服务化
+### 2.5 未来 UI 与 Linux 服务化
 
 1. [WSL2 后端与宿主机 UI 设计](design/dfl-wsl2-host-ui-design.md)
 
@@ -70,10 +77,12 @@ Phase 3：Linux 后端服务化与前端 UI
 
 | 文档 | 作用 | 当前状态 |
 |---|---|---|
-| [dfl-current-project-overview.md](analysis/dfl-current-project-overview.md) | 项目定位、模块架构、完整工作流、阶段路线 | v1.1，持续补充 |
-| [dfl-tf2-upgrade-analysis.md](analysis/dfl-tf2-upgrade-analysis.md) | TF2.x、CUDA、新 GPU、精度、优化器和数据管线的代码级分析 | v1.1，持续补充 |
-| [training-architecture-analysis.md](analysis/training-architecture-analysis.md) | SAEHD、Leras、数据、Loss、梯度和优化器训练链路 | v1.1，作为训练审计输入 |
-| [implementation-status-and-risk-matrix.md](analysis/implementation-status-and-risk-matrix.md) | 功能状态、代码入口、风险、验证方式和优先级 | v1.0，新增 |
+| [dfl-current-project-overview.md](analysis/dfl-current-project-overview.md) | 项目定位、模块架构、完整工作流、阶段路线 | v1.1，主总览 |
+| [dfl-tf2-upgrade-analysis.md](analysis/dfl-tf2-upgrade-analysis.md) | TF2.x、CUDA、新 GPU、精度、优化器和数据管线的代码级分析 | v1.1，训练审计输入 |
+| [implementation-status-and-risk-matrix.md](analysis/implementation-status-and-risk-matrix.md) | 功能状态、代码入口、风险、验证方式和优先级 | v1.0，统一状态来源 |
+| [extraction-architecture-analysis.md](analysis/extraction-architecture-analysis.md) | S3FD、FAN、对齐、worker、DFLJPG 和 Faceset 链路 | v1.0，Extract 基线 |
+| [training-architecture-analysis.md](analysis/training-architecture-analysis.md) | SAEHD、Leras、数据、Loss、梯度和优化器训练链路 | v1.1，训练审计输入 |
+| [merging-architecture-analysis.md](analysis/merging-architecture-analysis.md) | Predictor、mask、颜色、融合、多脸和时序链路 | v1.0，Merge 基线 |
 
 ### 3.2 Design：候选设计与未来方案
 
@@ -85,21 +94,22 @@ Phase 3：Linux 后端服务化与前端 UI
 
 ---
 
-## 4. 计划补充的文档
+## 4. 下一批计划文档
 
 ### 4.1 Phase 1 收尾
 
 | 文件 | 目标 | 状态 |
 |---|---|---|
-| `analysis/extraction-architecture-analysis.md` | 梳理检测、Landmark、对齐、Faceset 输出链路 | 待创建 |
-| `analysis/merging-architecture-analysis.md` | 梳理 predictor、mask、颜色、融合、编码链路 | 待创建 |
-| `analysis/configuration-and-compatibility-matrix.md` | Python、TF、CUDA、GPU、模型恢复、导出兼容矩阵 | 待创建 |
+| `analysis/configuration-and-compatibility-matrix.md` | Python、TF、CUDA、GPU、模型恢复、导出兼容矩阵 | 待创建，可与验证文档合并 |
+| `analysis/phase1-known-issues.md` | 将代码审计发现整理为可执行问题清单 | 可直接并入训练正确性审计 |
+
+Phase 1 的主架构文档已经覆盖 Extract、Training 和 Merge，不建议继续无限扩写现状文档。后续以专项审计和验证为主。
 
 ### 4.2 Phase 2：训练正确性和性能
 
 | 文件 | 目标 | 优先级 |
 |---|---|---|
-| `optimization/training-correctness-audit.md` | 审计 BF16/FP16、Loss Scaling、Lion、Optimizer state、梯度与恢复 | P0 |
+| `optimization/training-correctness-audit.md` | 审计 BF16/FP16、Loss Scaling、Lion、Optimizer state、梯度与恢复 | P0，下一份 |
 | `validation/training-benchmark-specification.md` | 固定数据集、配置、指标和测试流程 | P0 |
 | `optimization/training-performance-optimization.md` | 计算图、显存、数据管线、多 GPU 优化 | P1 |
 | `optimization/training-quality-algorithm-roadmap.md` | 采样、Loss、网络结构、时序一致性实验路线 | P1 |
@@ -112,7 +122,9 @@ Phase 3：Linux 后端服务化与前端 UI
 |---|---|---|
 | `optimization/extraction-optimization.md` | 检测、Landmark、批处理和流水线优化 | 待训练链路稳定后创建 |
 | `optimization/faceset-intelligence-design.md` | 去重、清晰度、姿态、遮挡、身份和采样分析 | 待创建 |
+| `validation/extraction-benchmark-specification.md` | 固定 Extract 数据集、速度和质量指标 | 待创建 |
 | `optimization/merging-optimization.md` | Batch 推理、GPU 后处理、时序平滑和编码流水线 | 待创建 |
+| `validation/video-temporal-quality-evaluation.md` | 闪烁、颜色跳变、mask 和 Landmark 稳定性 | 待创建 |
 
 ### 4.4 Phase 3：Linux 服务化和 UI
 
@@ -152,19 +164,23 @@ Phase 3：Linux 后端服务化与前端 UI
 ### Phase 1：项目现状与 TF2.x 升级分析
 
 ```text
-状态：进行中
-基线文档：已建立
-代码级实现映射：正在补充
-Extract / Merge 独立架构分析：尚未完成
-建议完成度：约 55%
+状态：主体完成，进入收尾
+项目总览：已完成 v1.1
+TF2.x 实现分析：已完成 v1.1
+训练架构分析：已完成 v1.1
+Extract 架构分析：已完成 v1.0
+Merge 架构分析：已完成 v1.0
+实现状态与风险矩阵：已完成 v1.0
+兼容性矩阵：尚未建立
+建议完成度：约 75%
 ```
 
 ### Phase 2：核心引擎优化
 
 ```text
-状态：准备阶段
-训练架构基线：已建立
-训练正确性审计：待正式落文档
+状态：准备完成，即将正式启动
+训练架构和风险基线：已建立
+训练正确性审计：下一份文档
 Benchmark：尚未建立
 性能和质量优化：尚未进入开发验证
 ```
@@ -182,12 +198,12 @@ Benchmark：尚未建立
 
 当前不应优先增加更多界面或外围功能。推荐顺序：
 
-1. 完成现有 TF2.x 改造的代码级审计。
-2. 修正 BF16、Loss Scaling、Lion、Optimizer state 等 P0 风险。
+1. 创建并完成 `training-correctness-audit.md`。
+2. 修正 BF16、Loss Scaling、Lion、Optimizer state、低精度梯度等 P0 风险。
 3. 建立统一训练 Benchmark。
-4. 才开始训练吞吐、显存和数据管线优化。
+4. 开始训练吞吐、显存和数据管线优化。
 5. 再进行采样、Loss 和网络结构实验。
-6. 训练稳定后分析 Extract 和 Merge。
+6. 训练稳定后进入 Extract/Faceset 和 Merge 专项优化。
 7. 最后进行 Linux 服务化和 UI 联通。
 
 ---

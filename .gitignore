@@ -57,3 +57,6 @@ workspace/
 *.pt
 *.pth
 *.onnx
+
+# Agent local rules
+AGENTS.md

@@ -1,0 +1,27 @@
+1、用管理员身份运行PowerShell，安装wsl：wsl --install
+2、C:\Users\你的用户名\.wslconfig 设置 
+    [wsl2]
+    # 允许 WSL 使用的物理内存（建议设置为你总内存的一半或更多）
+    memory=32GB 
+    # 设置更大的 Swap 空间，防止导出模型时崩溃
+    swap=32GB
+    # 允许 WSL 使用所有 CPU 核心
+    processors=16
+3、安装环境: setup_linux_native.sh
+4、少什么库，自己pip
+5、source activate_gpu.sh
+6、训练：
+    python3 main.py train --training-data-src-dir \$HOME/workspace/data_src \\"
+            echo "      --training-data-dst-dir \$HOME/workspace/data_dst \\"
+            echo "      --model-dir \$HOME/workspace/model --model SAEHD"
+7、导出dfm:
+    python main.py exportdfm --model-dir ~/workspace/model --model SAEHD
+8、合成：
+    python main.py merge --input-dir ~/workspace/data_dst --output-dir ~/workspace/data_dst/merged --output-mask-dir ~/workspace/data_dst/merged_mask --aligned-dir ~/workspace/data_dst/aligned --model-dir ~/workspace/model --model SAEHD
+        
+9、导出视频：先安装（1）pip install ffmpeg-python （2）sudo apt update && sudo apt install ffmpeg
+    python main.py videoed video-from-sequence --input-dir ~/workspace/data_dst/merged --output-file ~/workspace/result.mp4 --reference-file ~/workspace/data_dst.* --include-audio
+10、切脸：--workers-per-gpu 2 <----16G显存2-3，根据显存大小，调大可提高速度
+    python main.py extract --input-dir ~/workspace/data_dst --output-dir ~/workspace/data_dst/aligned/ --detector s3fd --jpeg-quality 100 --workers-per-gpu 2
+
+

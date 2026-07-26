@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0.0",
+  "created_at": "2026-07-26T20:03:30+08:00",
+  "ticket": "09-training-save-resume-smoke",
+  "task_class": "DEEP_AGENTIC_CODE",
+  "risk": "medium",
+  "minimum_thinking": "high",
+  "provider_allowlist": [
+    "cli_proxy_managed"
+  ],
+  "provider_status": {
+    "cli_proxy_managed": "allowed"
+  },
+  "data_allowed_providers": [
+    "cli_proxy_managed"
+  ],
+  "data_class": "internal",
+  "credential_path": "cli_proxy_managed_local",
+  "terms_status": "allowed",
+  "quota_signal": "grok_quota_exhausted_by_user; gemini_quota_unknown",
+  "explicit_user_request": true,
+  "model_development_requested": true,
+  "current_main_model": "unknown",
+  "explicit_user_models": [
+    "cli-proxy/gemini-3.6-flash-high"
+  ],
+  "task_intent": "mutate",
+  "mutation_authority": "isolated-worktree",
+  "grok_skip_reason": "User stated Grok quota is exhausted; previous Ticket 07 Grok worker also returned system_error_no_output.",
+  "local_probe_evidence": {
+    "checked_by_main_agent": true,
+    "registry_eligible": true,
+    "catalog": "/Users/tangwujun/.codex/opencodex-catalog.json",
+    "catalog_found": true,
+    "loopback_8317_status": "connection_refused",
+    "loopback_10100_status": "connection_refused",
+    "route_eligible": false,
+    "note": "Runtime endpoint was not listening during preflight; Codex App create_thread is the remaining official runtime acceptance check."
+  },
+  "candidates": [
+    {
+      "model": "cli-proxy/gemini-3.6-flash-high",
+      "thinking": "high",
+      "explicit_user_request": true,
+      "task_class_override": "DEEP_AGENTIC_CODE"
+    }
+  ],
+  "fallback_pool": [],
+  "max_worker_threads": 2,
+  "max_followups_per_thread": 1,
+  "reserved_slots": {
+    "root_creation_attempt_cap": 8,
+    "planned_workers": 1,
+    "reserved_for_recovery": 1,
+    "reserved_for_review": 0
+  },
+  "validation_scope": [
+    "macOS lightweight smoke and unit tests",
+    "Windows GPU SAEHD save/resume remains a documented manual validation boundary"
+  ]
+}

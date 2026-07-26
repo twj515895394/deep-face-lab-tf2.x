@@ -2,27 +2,28 @@
 
 > 本文件是新会话、新 Agent 和后续开发者的固定入口。  
 > 更新时间：2026-07-26  
-> 当前交接编号：H-008
+> 当前交接编号：H-009
 
 请先阅读最新交接文档：
 
-- [Ticket 07 Finite Gradient Gate 与 Loss Scaling：handoff-20260726-195000.md](handoff-20260726-195000.md)
+- [Ticket 09 训练保存恢复 smoke：handoff-20260726-201010.md](handoff-20260726-201010.md)
 
 然后继续阅读：
 
-1. [Ticket 06 Lion v2 与 Legacy State](handoff-20260726-184945.md)
-2. [Ticket 05/10 Optimizer Roundtrip 与 Merge Smoke](handoff-20260726-181947.md)
-3. [Ticket 04/08 Precision 与 Feature Flag](handoff-20260726-174706.md)
-4. [Ticket 03 训练异常语义](handoff-20260726-165523.md)
-5. [Batch 1 首轮实现与 Ticket 化](handoff-20260726-161235.md)
-6. [Batch 1 详细设计补齐](handoff-20260726-batch1-detailed-design.md)
-7. [首次完整项目交接](handoff-20260726-initial-project-state.md)
-8. [Batch 1 ticket 总入口](../.scratch/batch1-correctness-foundation/spec.md)
-9. [Batch 1：P0 正确性与扩展安全骨架详细设计](../docs/development/batch1-correctness-and-extension-foundation-tasks.md)
-10. [文档总索引](../docs/README.md)
-11. [Enhanced DFL 统一实施总计划](../docs/implementation/enhanced-dfl-master-implementation-plan.md)
-12. [训练正确性审计规范](../docs/optimization/training-correctness-audit.md)
-13. [开发验证与人工质量验收标准](../docs/implementation/manual-quality-acceptance-and-development-validation-standard.md)
+1. [Ticket 07 Finite Gradient Gate 与 Loss Scaling](handoff-20260726-195000.md)
+2. [Ticket 06 Lion v2 与 Legacy State](handoff-20260726-184945.md)
+3. [Ticket 05/10 Optimizer Roundtrip 与 Merge Smoke](handoff-20260726-181947.md)
+4. [Ticket 04/08 Precision 与 Feature Flag](handoff-20260726-174706.md)
+5. [Ticket 03 训练异常语义](handoff-20260726-165523.md)
+6. [Batch 1 首轮实现与 Ticket 化](handoff-20260726-161235.md)
+7. [Batch 1 详细设计补齐](handoff-20260726-batch1-detailed-design.md)
+8. [首次完整项目交接](handoff-20260726-initial-project-state.md)
+9. [Batch 1 ticket 总入口](../.scratch/batch1-correctness-foundation/spec.md)
+10. [Batch 1：P0 正确性与扩展安全骨架详细设计](../docs/development/batch1-correctness-and-extension-foundation-tasks.md)
+11. [文档总索引](../docs/README.md)
+12. [Enhanced DFL 统一实施总计划](../docs/implementation/enhanced-dfl-master-implementation-plan.md)
+13. [训练正确性审计规范](../docs/optimization/training-correctness-audit.md)
+14. [开发验证与人工质量验收标准](../docs/implementation/manual-quality-acceptance-and-development-validation-standard.md)
 
 当前状态：
 
@@ -37,21 +38,22 @@ Ticket 05 optimizer roundtrip 审计基础：macOS 轻量验证已完成
 Ticket 06 Lion v2 公式与 legacy state 保护：macOS 轻量验证已完成
 Ticket 07 finite gradient gate / Loss Scaling：macOS 轻量验证已完成
 Ticket 08 Enhancement Feature Flag 骨架：macOS 轻量验证已完成
+Ticket 09 保存恢复 smoke：macOS 轻量验证已完成
 Ticket 10 Merge 默认路径 smoke：macOS 轻量验证已完成
 Python 基线：最低 3.9，推荐 3.11 / 3.12
-下一步：从 Ticket 09 保存恢复 smoke 继续
+下一步：从 Ticket 11 Batch 1 兼容矩阵与 handoff 汇总继续
 ```
 
 当前下一步：
 
 ```text
-Ticket 09：建立训练保存恢复 smoke
+Ticket 11：汇总 Batch 1 兼容矩阵与 handoff
 ```
 
 下一轮代码修改建议按 ticket 边界处理：
 
-- Ticket 09 现在可继续，需围绕训练保存、销毁、重载和继续 step 的最小 smoke 收敛；
-- Ticket 11 仍 blocked by 09。
+- Ticket 11 现在可继续，需汇总 Batch 1 的实际代码状态、macOS 轻量测试、Windows GPU 待验证项、兼容矩阵和下一步风险；
+- Ticket 09 / 10 的 macOS 轻量依赖已完成。
 
 本轮不要同时引入：
 

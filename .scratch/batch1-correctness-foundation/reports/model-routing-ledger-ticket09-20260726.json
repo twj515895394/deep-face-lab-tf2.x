@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0.0",
+  "created_at": "2026-07-26T20:03:30+08:00",
+  "ticket": "09-training-save-resume-smoke",
+  "creation_attempts": 1,
+  "workers": [
+    {
+      "creation_attempt": 1,
+      "subtask_attempt": 1,
+      "task_id": "B1-T09-GEMINI-IMPL-20260726-2003",
+      "thread_id": "019f9e51-a201-7fb0-90f8-e05441c68597",
+      "pending_worktree_id": "client-new-thread:7f2b658f-e4be-4940-a604-32aa8224da64",
+      "control_state": "COMPLETED",
+      "thread_status": "idle",
+      "turn_status": "completed",
+      "last_observed_at": "2026-07-26T20:08:13+08:00",
+      "task_intent": "mutate",
+      "mutation_authority": "isolated-worktree",
+      "result_correlation_id": "B1-T09-RESULT-20260726-2003",
+      "role": "Ticket 09 implementation candidate",
+      "model": "cli-proxy/gemini-3.6-flash-high",
+      "requested_model": "cli-proxy/gemini-3.6-flash-high",
+      "platform_accepted_model": "cli-proxy/gemini-3.6-flash-high",
+      "observed_runtime_model": "unknown",
+      "thinking": "high",
+      "route_plan": {
+        "path": ".scratch/batch1-correctness-foundation/reports/route-plan-ticket09-20260726.json",
+        "task_class": "DEEP_AGENTIC_CODE",
+        "minimum_thinking": "high",
+        "candidates": [
+          {
+            "model": "cli-proxy/gemini-3.6-flash-high",
+            "thinking": "high"
+          }
+        ],
+        "fallback_pool": []
+      },
+      "provider_policy": {
+        "provider": "cli_proxy_managed",
+        "credential_path": "cli_proxy_managed_local",
+        "terms_status": "allowed",
+        "data_class": "internal",
+        "provider_allowlist": [
+          "cli_proxy_managed"
+        ],
+        "quota_signal": "gemini_quota_unknown"
+      },
+      "materialized": true,
+      "data_ready": true,
+      "status": "completed_without_final_message",
+      "output": "Thread completed but read_thread exposed no final assistant message and the isolated worktree had no usable diff; main Agent implementation was used instead.",
+      "adopted": false,
+      "fallback_reason": "grok_quota_exhausted_by_user",
+      "archived": false
+    }
+  ]
+}

@@ -5,7 +5,7 @@
 > 仓库：`twj515895394/deep-face-lab-tf2.x`  
 > 默认分支：`main`  
 > 上一份交接：`handoff-20260726-initial-project-state.md`  
-> 本次定位：完成 Batch 1 的源码复核与文件级、函数级详细设计，尚未开始代码修改。
+> 本次定位：完成 Batch 1 的源码复核与文件级、函数级详细设计，尚未开始运行时代码修改。
 
 ---
 
@@ -93,6 +93,31 @@ docs/development/batch1-correctness-and-extension-foundation-tasks.md
 - 推荐提交拆分；
 - Batch 1 阻断条件与完成标准。
 
+### 2.4 同步文档入口
+
+已完成：
+
+```text
+.handoff/current.md
+```
+
+现在指向 H-002，并明确下一步为 B1-00 与 B1-01。
+
+已完成：
+
+```text
+docs/README.md
+```
+
+已加入：
+
+- `development/` 目录定位；
+- Batch 1 详细设计入口；
+- 当前真实状态；
+- Batch 1 推荐阅读顺序；
+- 当前 P0 任务顺序；
+- “详细设计完成不等于代码已实现”的状态说明。
+
 ---
 
 ## 3. 本次确认的关键源码事实
@@ -162,7 +187,7 @@ FP32 Optimizer State
 - `MixedPrecisionManager` 又定义 BF16 默认 scale=1；
 - `auto` 分支在当前选项中不可达。
 
-设计文档已规定统一 resolver 与 requested/effective precision。
+详细设计已规定统一 requested / effective precision resolver。
 
 ### 3.4 当前数值检查发生在 optimizer update 之后
 
@@ -170,7 +195,7 @@ FP32 Optimizer State
 
 之后才检查 loss 是否 finite，无法保证坏 step 被跳过。
 
-设计文档已规定：
+目标顺序：
 
 ```text
 unscale gradient
@@ -182,7 +207,7 @@ unscale gradient
 
 当前 Lion 定义了 `beta_2`，但实际更新没有使用它。
 
-修复后旧 slot 语义不兼容，因此设计文档规定：
+修复后旧 slot 语义不兼容，因此详细设计规定：
 
 - 新 Lion state 使用 v2 schema；
 - legacy Lion 主权重可以加载；
@@ -208,12 +233,14 @@ docs/development/batch1-correctness-and-extension-foundation-tasks.md
 .handoff/handoff-20260726-batch1-detailed-design.md
 ```
 
-待同步：
+更新：
 
 ```text
 .handoff/current.md
 docs/README.md
 ```
+
+所有计划中的 Python 运行时文件仍保持原状。
 
 ---
 
@@ -305,7 +332,7 @@ Merge smoke：未实现
 - 当前会话通过 GitHub 读取源码，没有本地 GPU / faceset 运行环境；
 - 所有运行收益仍需后续代码会话实际验证。
 
-已完成的是静态源码复核和调用链确认。
+已完成的是静态源码复核、调用链确认和施工设计。
 
 ---
 
@@ -398,11 +425,22 @@ tests/smoke/test_batch1_eyes_mouth_masks.py
 
 ## 12. 相关提交
 
-本次新增 Batch 1 详细设计：
-
 ```text
 11f9e9367d19b6da0725112b178d06e58b17fc06
 docs: add Batch 1 correctness and extension foundation design
+
+c504979dfba366f958692a703b370282c1c8842f
+docs: add Batch 1 detailed design handoff
+
+0915be8d79842353e3b4a1e10afc06ea41c6e35c
+docs: point current handoff to Batch 1 detailed design
+
+2b7e997d79c3f93ad0b05caac50a8aaf45e64b9d
+docs: index Batch 1 detailed development design
 ```
 
-本 handoff 的提交由当前文件创建操作产生。
+本文件最终状态同步提交：
+
+```text
+docs: finalize Batch 1 design handoff status
+```

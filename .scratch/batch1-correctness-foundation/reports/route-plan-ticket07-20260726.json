@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0.0",
+  "created_at": "2026-07-26T19:39:45+08:00",
+  "root_task": "Batch 1 Ticket 07 - finite gradient gate and loss scaling policy",
+  "task_class": "DEEP_AGENTIC_CODE",
+  "minimum_thinking": "high",
+  "model_development_requested": true,
+  "task_intent": "mutate",
+  "mutation_authority": "isolated-worktree",
+  "main_agent_takeover": false,
+  "current_main_model": "unknown",
+  "explicit_user_models": [],
+  "data_class": "internal",
+  "provider_allowlist": [
+    "cli_proxy_managed"
+  ],
+  "data_allowed_providers": [
+    "cli_proxy_managed"
+  ],
+  "provider_status": {
+    "cli_proxy_managed": "allowed"
+  },
+  "candidates": [
+    {
+      "model": "cli-proxy/grok-4.5",
+      "thinking": "high",
+      "selection_reason": "Preferred for high-risk agentic training graph changes when available."
+    },
+    {
+      "model": "cli-proxy/gemini-3.6-flash-high",
+      "thinking": "high",
+      "selection_reason": "Predeclared fallback if Grok hits quota, rate limit, or upstream availability issues."
+    }
+  ],
+  "fallback_pool": [],
+  "max_worker_threads": 2,
+  "max_followups_per_thread": 1,
+  "reserved_slots": {
+    "planned_workers": 1,
+    "retry_reserved": 1,
+    "later_ticket09_reserved": 1,
+    "root_creation_attempt_limit": 8
+  },
+  "strategy": {
+    "name": "A_plus_conservative",
+    "preserve_bf16_path": true,
+    "do_not_force_fp32": true,
+    "do_not_implement_fp32_master_weights": true,
+    "scope": "Add pre-update finite gradient gating and align policy/reporting while keeping BF16 legacy path experimental."
+  },
+  "preflight": {
+    "cli-proxy/grok-4.5": {
+      "thinking": "high",
+      "route_eligible": true
+    },
+    "cli-proxy/gemini-3.6-flash-high": {
+      "thinking": "high",
+      "route_eligible": true
+    }
+  }
+}

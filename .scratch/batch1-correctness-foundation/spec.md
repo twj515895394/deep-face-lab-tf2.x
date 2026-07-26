@@ -9,8 +9,8 @@ Status: ready-for-agent
 当前状态：
 
 - Batch 1 详细设计已完成。
-- Ticket 01 / 02 / 03 / 04 / 05 / 06 / 08 / 10 已完成 macOS 轻量实现与验证。
-- 下一步从 finite gradient gate / Loss Scaling 策略继续。
+- Ticket 01 / 02 / 03 / 04 / 05 / 06 / 07 / 08 / 10 已完成 macOS 轻量实现与验证。
+- 下一步从保存恢复 smoke 继续。
 
 ## 执行边界
 
@@ -32,7 +32,7 @@ Status: ready-for-agent
 
 优先领取所有阻塞依赖均已完成的 issue。当前 frontier：
 
-- `07-finite-gradient-gate-and-loss-scale-policy.md`
+- `09-training-save-resume-smoke.md`
 
 已完成：
 
@@ -42,6 +42,7 @@ Status: ready-for-agent
 - `04-precision-contract-audit.md`
 - `05-optimizer-roundtrip-audit.md`
 - `06-lion-v2-and-legacy-state.md`
+- `07-finite-gradient-gate-and-loss-scale-policy.md`
 - `08-enhancement-feature-flags.md`
 - `10-merge-default-path-smoke.md`
 

@@ -13,6 +13,7 @@ STATUS_EXPERIMENTAL = "experimental"
 STATUS_BLOCKED = "blocked"
 
 SUPPORTED_PRECISIONS = ("fp32", "fp16", "bf16")
+DEFAULT_ROUNDTRIP_ERROR_TOLERANCE = 1e-6
 PRECISION_ALIASES = {
     "fp32": "fp32",
     "float32": "fp32",
@@ -201,18 +202,45 @@ def collect_weight_dtype_snapshot(weights: Iterable[Any]) -> List[str]:
 
 
 def collect_optimizer_slot_dtype_snapshot(optimizer: Any) -> Dict[str, List[str]]:
+    """Collect observed optimizer slot dtypes from real leras optimizers or fakes.
+
+    真实 AdaBelief/RMSprop/Lion 使用 ms_dict/vs_dict/c_dict/accumulators_dict；
+    这里同时兼容测试 Fake 的扁平 ms/vs/c 列表属性。
+    """
     slots = {}
-    for name in ("ms", "vs", "c", "m", "v", "accumulators", "weights"):
+    attr_names = (
+        "ms",
+        "vs",
+        "c",
+        "m",
+        "v",
+        "accumulators",
+        "weights",
+        "ms_dict",
+        "vs_dict",
+        "c_dict",
+        "accumulators_dict",
+        "iterations",
+    )
+    for name in attr_names:
         values = getattr(optimizer, name, None)
         if values is None:
             continue
-        if not isinstance(values, (list, tuple)):
+        if isinstance(values, Mapping):
+            values = list(values.values())
+        elif not isinstance(values, (list, tuple)):
             values = [values]
-        slots[name] = _unique_dtype_names(values)
+        if not values:
+            continue
+        names = _unique_dtype_names(values)
+        if names:
+            slots[name] = names
     get_weights = getattr(optimizer, "get_weights", None)
     if callable(get_weights):
         try:
-            slots["get_weights"] = _unique_dtype_names(get_weights())
+            names = _unique_dtype_names(get_weights())
+            if names:
+                slots["get_weights"] = names
         except Exception:
             pass
     return slots
@@ -228,6 +256,7 @@ def audit_precision_dtypes(
     save_file_dtype: Any = None,
     load_variable_dtype: Any = None,
     max_abs_reload_error: Any = None,
+    roundtrip_error_tolerance: float = DEFAULT_ROUNDTRIP_ERROR_TOLERANCE,
 ) -> Dict[str, Any]:
     report = dict(contract)
     observed = {
@@ -266,7 +295,11 @@ def audit_precision_dtypes(
     report["mismatches"] = mismatches
     report["evidence"] = {
         "macos_structural_audit": True,
-        "optimizer_roundtrip_verified": max_abs_reload_error is not None,
+        "optimizer_roundtrip_verified": (
+            max_abs_reload_error is not None
+            and float(max_abs_reload_error) <= float(roundtrip_error_tolerance)
+        ),
+        "optimizer_roundtrip_error_tolerance": roundtrip_error_tolerance,
         "windows_gpu_evidence": "missing",
     }
     report["capability_boundaries"] = {

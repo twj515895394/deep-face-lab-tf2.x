@@ -126,6 +126,20 @@ class Batch1PrecisionContractTest(unittest.TestCase):
         self.assertEqual(["float32"], report["observed"]["master_weight_dtypes"])
         self.assertEqual(["float32"], report["observed"]["optimizer_slot_dtypes_observed"])
         self.assertTrue(report["evidence"]["optimizer_roundtrip_verified"])
+        self.assertEqual(1e-6, report["evidence"]["optimizer_roundtrip_error_tolerance"])
+
+    def test_roundtrip_evidence_requires_error_within_tolerance(self):
+        contract = self.pc.resolve_precision_contract(
+            "fp32",
+            runtime_capabilities={"tensorflow_available": False},
+        )
+        report = self.pc.audit_precision_dtypes(
+            contract,
+            max_abs_reload_error=0.01,
+            roundtrip_error_tolerance=1e-6,
+        )
+
+        self.assertFalse(report["evidence"]["optimizer_roundtrip_verified"])
         self.assertIn("requested=fp32", report["summary"])
 
     def test_mismatch_downgrades_validated_report(self):

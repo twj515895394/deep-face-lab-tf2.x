@@ -29,6 +29,7 @@
   - `git.commit`
   - `git.branch`
   - `python`
+  - `python.minimum_supported`
   - `platform`
   - `dependencies`
   - `windows_gpu_validation_required`
@@ -46,13 +47,13 @@
 
 - `python3 -m unittest tests.smoke.test_batch1_mac_smoke`：通过，3 个测试。
 - `python3 -m py_compile tools/smoke/batch1_mac_smoke.py tests/smoke/test_batch1_mac_smoke.py`：通过。
-- `python3 -m tools.smoke.batch1_mac_smoke --print-json`：通过，Git metadata 已采集，AST 扫描 166 个 Python 文件，0 个语法错误，并记录轻量导入失败原因。
+- `python3 -m tools.smoke.batch1_mac_smoke --print-json`：通过，最低 Python 版本记录为 3.9，Git metadata 已采集，AST 扫描 166 个 Python 文件，0 个语法错误，并记录轻量导入失败原因。
 
 本机记录：
 
 - commit：`1d24a54f0b5b29852b0f725b2e2e1e92414cf9a2`
 - branch：`main`
-- Python：`3.12.8`
+- Python：`3.12.8`，最低支持版本 `3.9`
 - 平台：`Darwin arm64`
 - `numpy`：可用
 - `cv2`：不可用

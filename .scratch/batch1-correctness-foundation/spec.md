@@ -20,6 +20,7 @@ Status: ready-for-agent
 
 本项目在 macOS 上开发时默认没有可用 GPU，因此 macOS 侧只要求完成轻量级工程验证：
 
+- Python 版本最低为 3.9，推荐使用 3.11 或 3.12。
 - Python 语法编译检查。
 - 可在 CPU 环境完成的单元测试或纯函数测试。
 - 不依赖真实 GPU 的导入、配置读取、fixture 和 smoke harness 结构检查。

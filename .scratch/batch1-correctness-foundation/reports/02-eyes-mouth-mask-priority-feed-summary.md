@@ -40,7 +40,7 @@
 - `python3 -m unittest tests.smoke.test_batch1_eyes_mouth_masks tests.smoke.test_batch1_mac_smoke`：通过，13 个测试。
 - `python3 -m unittest discover -s tests/smoke -p 'test_batch1_*.py'`：通过，13 个测试。
 - `python3 -m py_compile models/Model_SAEHD/Model.py tests/smoke/test_batch1_eyes_mouth_masks.py tools/smoke/batch1_mac_smoke.py tests/smoke/test_batch1_mac_smoke.py`：通过。
-- `python3 -m tools.smoke.batch1_mac_smoke --print-json`：通过，Git metadata 已采集，AST 扫描 166 个 Python 文件，0 个语法错误，并记录轻量导入失败原因。
+- `python3 -m tools.smoke.batch1_mac_smoke --print-json`：通过，最低 Python 版本记录为 3.9，Git metadata 已采集，AST 扫描 166 个 Python 文件，0 个语法错误，并记录轻量导入失败原因。
 
 ## 人工验证建议
 

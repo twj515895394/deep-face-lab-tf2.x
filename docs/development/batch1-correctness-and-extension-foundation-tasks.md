@@ -561,7 +561,7 @@ core/leras/precision_contract.py
 
 ### 9.3 建议数据结构
 
-为兼容 Python 3.6，使用普通类或 dict，不强制依赖 dataclass。
+项目最低 Python 版本为 3.9，可使用 dataclass 与 3.9+ 类型标注；该结构也可以先用普通 dict 落地，避免 Batch 1 在审计阶段引入不必要抽象。
 
 ```python
 {

@@ -34,6 +34,9 @@ REPO_MODULES = ("core", "models", "merger", "samplelib")
 OPTIONAL_DEPENDENCIES = ("numpy", "cv2", "tensorflow")
 LIGHTWEIGHT_IMPORT_ATTEMPTS = ("core.leras.nn", "models", "merger.MergeMasked")
 SKIP_SYNTAX_DIRS = {".git", "__pycache__", "workspace", ".venv", "venv"}
+TRAINING_SAVE_RESUME_SMOKE_PATH = (
+    REPO_ROOT / "core" / "leras" / "training_save_resume_smoke.py"
+)
 
 WINDOWS_GPU_VALIDATION_ITEMS = (
     "Windows launch scripts and environment activation",
@@ -76,6 +79,38 @@ def _import_status(module_name: str) -> dict[str, Any]:
     return {
         "available": True,
         "version": getattr(module, "__version__", None),
+    }
+
+
+def _load_module_from_path(module_name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load module {module_name} from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def run_training_save_resume_summary(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
+    path = repo_root.resolve() / TRAINING_SAVE_RESUME_SMOKE_PATH.relative_to(REPO_ROOT)
+    try:
+        module = _load_module_from_path("batch1_training_save_resume_for_mac_smoke", path)
+        bundle = module.run_all_training_save_resume_smokes()
+    except Exception as exc:
+        return {
+            "status": "fail",
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        }
+    return {
+        "status": "pass",
+        "mode": bundle["mode"],
+        "optimizers": bundle["optimizers"],
+        "max_abs_reload_error": bundle["max_abs_reload_error"],
+        "max_abs_update_error": bundle["max_abs_update_error"],
+        "macos_lightweight_only": bundle["macos_lightweight_only"],
+        "windows_gpu_validation_required": bundle["windows_gpu_validation_required"],
     }
 
 
@@ -153,12 +188,14 @@ def run_lightweight_checks(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         for name in REPO_MODULES
     }
     syntax_scan = run_syntax_scan(repo_root)
+    training_save_resume = run_training_save_resume_summary(repo_root)
     checks = {
         "git_metadata_available": git_commit is not None and git_branch is not None,
         "python_version_supported": sys.version_info >= MIN_PYTHON_VERSION,
         "required_files": required_files,
         "repo_modules": repo_modules,
         "syntax_scan": syntax_scan,
+        "training_save_resume": training_save_resume,
         "gpu_training_skipped_by_design": True,
     }
     required_ok = (
@@ -168,6 +205,7 @@ def run_lightweight_checks(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         and all(required_files.values())
         and all(item["available"] for item in repo_modules.values())
         and not syntax_scan["errors"]
+        and training_save_resume["status"] == "pass"
     )
     return {
         "status": "pass" if required_ok else "fail",

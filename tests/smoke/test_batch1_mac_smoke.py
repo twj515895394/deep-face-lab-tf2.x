@@ -26,6 +26,15 @@ class Batch1MacSmokeTest(unittest.TestCase):
         self.assertEqual("pass", summary["status"])
         self.assertTrue(summary["checks"]["git_metadata_available"])
         self.assertTrue(summary["checks"]["gpu_training_skipped_by_design"])
+        self.assertEqual("pass", summary["checks"]["training_save_resume"]["status"])
+        self.assertEqual(
+            0.0,
+            summary["checks"]["training_save_resume"]["max_abs_reload_error"],
+        )
+        self.assertEqual(
+            0.0,
+            summary["checks"]["training_save_resume"]["max_abs_update_error"],
+        )
         self.assertTrue(
             all(summary["checks"]["required_files"].values()),
             summary["checks"]["required_files"],

@@ -1,0 +1,103 @@
+[
+  {
+    "creation_attempt": 1,
+    "subtask_attempt": 1,
+    "task_id": "B1-T04-GROK-20260726-1715",
+    "thread_id": "019f9db5-27f4-7202-b542-3e42baf6c747",
+    "pending_worktree_id": null,
+    "control_state": "DATA_READY",
+    "thread_status": "active",
+    "turn_status": "inProgress",
+    "last_observed_at": "2026-07-26T09:49:20Z",
+    "task_intent": "mutate",
+    "mutation_authority": "isolated-worktree",
+    "result_correlation_id": "B1-T04-precision-contract",
+    "role": "Ticket 04 isolated implementation worker",
+    "model": "cli-proxy/grok-4.5",
+    "requested_model": "cli-proxy/grok-4.5",
+    "platform_accepted_model": "cli-proxy/grok-4.5",
+    "observed_runtime_model": "unknown",
+    "thinking": "high",
+    "route_plan": {
+      "profile": "DEEP_AGENTIC_CODE",
+      "minimum_thinking": "high",
+      "candidate_chain": [
+        {"model": "cli-proxy/grok-4.5", "thinking": "high"},
+        {"model": "cli-proxy/gemini-3.6-flash-high", "thinking": "high"},
+        {"model": "main-codex", "thinking": "current"}
+      ],
+      "fallback_condition": "quota, rate limit, upstream unavailable, auth recoverable failure, or semantic probe failure",
+      "preflight": {
+        "registry_eligible": true,
+        "runtime_status": "pass",
+        "semantic_probe": "pass",
+        "probe_url": "http://127.0.0.1:10100/v1/responses"
+      }
+    },
+    "provider_policy": {
+      "provider": "cli_proxy_managed",
+      "credential_path": "opencodex local gateway",
+      "terms_status": "allowed",
+      "data_class": "internal",
+      "provider_allowlist": ["cli_proxy_managed", "openai"],
+      "quota_signal": "unknown"
+    },
+    "materialized": true,
+    "data_ready": true,
+    "status": "main_integrated_partial; official read_thread returned challenge html before archive gate",
+    "output": "Direction adopted after strict main review: precision contract module, SAEHD effective precision reporting, and focused smoke tests. Worker changes to historical handoff/spec/Ticket 03 were not adopted.",
+    "adopted": true,
+    "fallback_reason": null,
+    "archived": false
+  },
+  {
+    "creation_attempt": 2,
+    "subtask_attempt": 1,
+    "task_id": "B1-T08-GEMINI-20260726-1715",
+    "thread_id": "019f9db5-3fb6-7200-9028-b2e3108c388c",
+    "pending_worktree_id": null,
+    "control_state": "DATA_READY",
+    "thread_status": "active",
+    "turn_status": "inProgress",
+    "last_observed_at": "2026-07-26T09:49:20Z",
+    "task_intent": "mutate",
+    "mutation_authority": "isolated-worktree",
+    "result_correlation_id": "B1-T08-enhancement-flags",
+    "role": "Ticket 08 isolated implementation worker",
+    "model": "cli-proxy/gemini-3.6-flash-high",
+    "requested_model": "cli-proxy/gemini-3.6-flash-high",
+    "platform_accepted_model": "cli-proxy/gemini-3.6-flash-high",
+    "observed_runtime_model": "unknown",
+    "thinking": "high",
+    "route_plan": {
+      "profile": "DEEP_AGENTIC_CODE",
+      "minimum_thinking": "high",
+      "candidate_chain": [
+        {"model": "cli-proxy/gemini-3.6-flash-high", "thinking": "high"},
+        {"model": "main-codex", "thinking": "current"}
+      ],
+      "fallback_condition": "quota, rate limit, upstream unavailable, auth recoverable failure, semantic probe failure, or main-agent review rejection",
+      "preflight": {
+        "registry_eligible": true,
+        "runtime_status": "pass",
+        "semantic_probe": "pass",
+        "probe_url": "http://127.0.0.1:10100/v1/responses"
+      }
+    },
+    "provider_policy": {
+      "provider": "cli_proxy_managed",
+      "credential_path": "opencodex local gateway",
+      "terms_status": "allowed",
+      "data_class": "internal",
+      "provider_allowlist": ["cli_proxy_managed", "openai"],
+      "quota_signal": "unknown"
+    },
+    "materialized": true,
+    "data_ready": true,
+    "status": "main_integrated_partial; official read_thread returned challenge html before archive gate",
+    "output": "Direction adopted after strict main review: enhancement config module, SAEHD legacy-safe options integration, and focused smoke tests. Worker changes to historical handoff/spec/Ticket 03 were not adopted.",
+    "adopted": true,
+    "fallback_reason": null,
+    "archived": false
+  }
+]

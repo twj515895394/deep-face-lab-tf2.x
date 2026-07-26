@@ -9,8 +9,8 @@ Status: ready-for-agent
 当前状态：
 
 - Batch 1 详细设计已完成。
-- Batch 1 运行时代码尚未修改。
-- 下一步从最小 smoke harness 与 Eyes / Mouth Priority 真实 mask 修复开始。
+- Ticket 01 / 02 / 03 / 04 / 08 已完成 macOS 轻量实现与验证。
+- 下一步从 optimizer roundtrip 审计与 Merge 默认路径 smoke 继续。
 
 ## 执行边界
 
@@ -32,14 +32,16 @@ Status: ready-for-agent
 
 优先领取所有阻塞依赖均已完成的 issue。当前 frontier：
 
-- `03-training-exception-semantics.md`
-- `04-precision-contract-audit.md`
-- `08-enhancement-feature-flags.md`
+- `05-optimizer-roundtrip-audit.md`
+- `10-merge-default-path-smoke.md`
 
 已完成：
 
 - `01-baseline-and-mac-smoke-harness.md`
 - `02-eyes-mouth-mask-priority-feed.md`
+- `03-training-exception-semantics.md`
+- `04-precision-contract-audit.md`
+- `08-enhancement-feature-flags.md`
 
 ## 参考文档
 

@@ -561,6 +561,8 @@ Manual Acceptance
 - 训练和 Merge smoke test。
 - 旧流程回归。
 
+状态：已完成 macOS 轻量实现与复核。Windows GPU 真实训练、保存恢复、Merge 质量与 FP16/BF16 稳定性仍待补证。
+
 ### Batch 2：训练数据增强
 
 - metadata schema。
@@ -711,21 +713,20 @@ Manual Acceptance
 
 ## 11. 当前建议启动点
 
-文档阶段已经足够，后续不应继续无限增加概念设计。
+Batch 1 的 macOS 轻量实现与复核已经完成，后续不应继续把 Batch 1 当作未开工任务。
 
-正式开发从以下顺序开始：
+当前建议从以下顺序开始：
 
 ```text
-1. P0 Eyes / Mouth Priority 修复
-2. 训练正确性与保存恢复检查
-3. Feature Flag / Config 骨架
-4. Metadata / Sampling MVP
-5. Loss Hook MVP
-6. Identity Geometry MVP
-7. Source Shape Template
-8. Shape-aware Merge MVP
-9. Temporal
-10. 人工验收与参数调整
+1. 将 Windows GPU 验证清单转成可执行 checklist
+2. 建立 Batch 2 ticket 边界
+3. Metadata / Sampling MVP
+4. Loss Hook MVP
+5. Identity Geometry MVP
+6. Source Shape Template
+7. Shape-aware Merge MVP
+8. Temporal
+9. 人工验收与参数调整
 ```
 
 这条顺序同时覆盖最初的训练增强目标和后续的脸型训练、合成优化目标，是后续 Codex、Claude 或人工开发任务拆分的统一依据。

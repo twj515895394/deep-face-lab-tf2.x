@@ -3,7 +3,7 @@
 > 文档版本：v1.0  
 > 创建日期：2026-07-26  
 > 基线提交：`afece7f10311650e2a50a40faf75f4a86268ba87`  
-> 当前状态：详细设计完成，代码尚未实施  
+> 当前状态：macOS 轻量实现与复核已完成；Windows GPU 真实训练、保存恢复与 Merge 质量待补证
 > 批次定位：承接 `Stage 1：P0 训练正确性修复` 与 `Stage 2：配置与扩展骨架`  
 > 执行原则：先修已确认错误，再建立观测与回归；不在本批次引入新的训练 Loss、Sampling、Identity Geometry 或 Shape-aware Merge 算法。
 
@@ -12,6 +12,13 @@
 ## 1. 文档目的
 
 本文件是 Batch 1 的文件级、函数级施工说明，不是新的总体架构路线。
+
+实施状态更新：
+
+- Ticket 01-11 已完成 macOS 轻量实现、验证与复核。
+- Batch 1 当前只代表 P0 正确性修复、兼容骨架和可重复 smoke 已落地。
+- Windows GPU / TensorFlow / SAEHD 真实训练、真实保存恢复、真实 Merge 质量和 FP16/BF16 稳定性仍是后续验收门。
+- Batch 1 未实现 Region / Boundary / Frequency Loss、Identity Geometry、Source Shape Template 或 Shape-aware Merge。
 
 它负责回答：
 
@@ -1319,23 +1326,25 @@ docs(handoff): record Batch 1 implementation and remaining risks
 
 ### 19.1 必须全部满足
 
-- [ ] 当前 `main` 分支可启动。
-- [ ] FP32 SAEHD 可初始化并完成最小训练 step。
-- [ ] Eyes / Mouth Priority 开启时使用真实 mask。
-- [ ] Priority 关闭时仍使用原三输出数据路径。
-- [ ] 非 OOM 异常不再静默吞掉。
-- [ ] Lion 标准公式通过手工数值测试。
-- [ ] legacy Lion state 不会静默按新公式恢复。
-- [ ] AdaBelief、Lion v2、RMSprop 至少通过小图 roundtrip。
-- [ ] precision contract 能报告 weight、gradient、slot 与恢复 dtype。
-- [ ] 非 finite gradient 不会执行 optimizer update。
-- [ ] 动态 Loss Scale 状态可保存恢复，或低精度明确保持 experimental。
-- [ ] Enhancement Config 缺失时全部增强关闭。
-- [ ] 旧模型无新字段时可加载。
-- [ ] 默认 Merge smoke 可运行。
-- [ ] 所有增强关闭时通过兼容回归。
-- [ ] smoke test 命令和 fixture 说明已写入仓库。
-- [ ] 文档索引、状态矩阵和 handoff 已同步。
+- [ ] 当前 `main` 分支可启动。（Windows GPU 待验证）
+- [ ] FP32 SAEHD 可初始化并完成最小训练 step。（Windows GPU 待验证）
+- [x] Eyes / Mouth Priority 开启时使用真实 mask。（macOS 轻量验证）
+- [x] Priority 关闭时仍使用原三输出数据路径。（macOS 轻量验证）
+- [x] 非 OOM 异常不再静默吞掉。（macOS 轻量验证）
+- [x] Lion 标准公式通过手工数值测试。（macOS 轻量验证）
+- [x] legacy Lion state 不会静默按新公式恢复。（macOS 轻量验证）
+- [x] AdaBelief、Lion v2、RMSprop 至少通过小图 roundtrip。（macOS 轻量验证）
+- [x] precision contract 能报告 weight、gradient、slot 与恢复 dtype。（macOS 轻量验证）
+- [x] 非 finite gradient 不会执行 optimizer update。（macOS 轻量验证）
+- [x] 动态 Loss Scale 状态可保存恢复，或低精度明确保持 experimental。（macOS 轻量验证）
+- [x] Enhancement Config 缺失时全部增强关闭。（macOS 轻量验证）
+- [x] 旧模型无新字段时可加载。（macOS 轻量验证）
+- [x] 默认 Merge smoke 可运行。（macOS dummy / fixture 轻量验证）
+- [x] 所有增强关闭时通过兼容回归。（macOS 轻量验证）
+- [x] smoke test 命令和 fixture 说明已写入仓库。
+- [x] 文档索引、状态矩阵和 handoff 已同步。
+
+说明：Batch 1 已完成 macOS 轻量完成标准；上表未勾选项不是代码实现缺口，而是 Windows GPU 环境验收缺口。
 
 ### 19.2 不作为完成条件
 

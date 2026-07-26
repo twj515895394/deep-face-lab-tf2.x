@@ -2,25 +2,26 @@
 
 > 本文件是新会话、新 Agent 和后续开发者的固定入口。  
 > 更新时间：2026-07-26  
-> 当前交接编号：H-006
+> 当前交接编号：H-007
 
 请先阅读最新交接文档：
 
-- [Ticket 05/10 Optimizer Roundtrip 与 Merge Smoke：handoff-20260726-181947.md](handoff-20260726-181947.md)
+- [Ticket 06 Lion v2 与 Legacy State：handoff-20260726-184945.md](handoff-20260726-184945.md)
 
 然后继续阅读：
 
-1. [Ticket 04/08 Precision 与 Feature Flag](handoff-20260726-174706.md)
-2. [Ticket 03 训练异常语义](handoff-20260726-165523.md)
-3. [Batch 1 首轮实现与 Ticket 化](handoff-20260726-161235.md)
-4. [Batch 1 详细设计补齐](handoff-20260726-batch1-detailed-design.md)
-5. [首次完整项目交接](handoff-20260726-initial-project-state.md)
-6. [Batch 1 ticket 总入口](../.scratch/batch1-correctness-foundation/spec.md)
-7. [Batch 1：P0 正确性与扩展安全骨架详细设计](../docs/development/batch1-correctness-and-extension-foundation-tasks.md)
-8. [文档总索引](../docs/README.md)
-9. [Enhanced DFL 统一实施总计划](../docs/implementation/enhanced-dfl-master-implementation-plan.md)
-10. [训练正确性审计规范](../docs/optimization/training-correctness-audit.md)
-11. [开发验证与人工质量验收标准](../docs/implementation/manual-quality-acceptance-and-development-validation-standard.md)
+1. [Ticket 05/10 Optimizer Roundtrip 与 Merge Smoke](handoff-20260726-181947.md)
+2. [Ticket 04/08 Precision 与 Feature Flag](handoff-20260726-174706.md)
+3. [Ticket 03 训练异常语义](handoff-20260726-165523.md)
+4. [Batch 1 首轮实现与 Ticket 化](handoff-20260726-161235.md)
+5. [Batch 1 详细设计补齐](handoff-20260726-batch1-detailed-design.md)
+6. [首次完整项目交接](handoff-20260726-initial-project-state.md)
+7. [Batch 1 ticket 总入口](../.scratch/batch1-correctness-foundation/spec.md)
+8. [Batch 1：P0 正确性与扩展安全骨架详细设计](../docs/development/batch1-correctness-and-extension-foundation-tasks.md)
+9. [文档总索引](../docs/README.md)
+10. [Enhanced DFL 统一实施总计划](../docs/implementation/enhanced-dfl-master-implementation-plan.md)
+11. [训练正确性审计规范](../docs/optimization/training-correctness-audit.md)
+12. [开发验证与人工质量验收标准](../docs/implementation/manual-quality-acceptance-and-development-validation-standard.md)
 
 当前状态：
 
@@ -32,23 +33,23 @@ Ticket 02 Eyes / Mouth Priority 真实 mask 修复：已完成
 Ticket 03 统一训练异常处理与失败语义：macOS 轻量验证已完成
 Ticket 04 Precision Contract 与 dtype 审计：macOS 轻量验证已完成
 Ticket 05 optimizer roundtrip 审计基础：macOS 轻量验证已完成
+Ticket 06 Lion v2 公式与 legacy state 保护：macOS 轻量验证已完成
 Ticket 08 Enhancement Feature Flag 骨架：macOS 轻量验证已完成
 Ticket 10 Merge 默认路径 smoke：macOS 轻量验证已完成
 Python 基线：最低 3.9，推荐 3.11 / 3.12
-下一步：从 Ticket 06 / 07 frontier 继续
+下一步：从 Ticket 07 HITL 继续
 ```
 
 当前下一步：
 
 ```text
-Ticket 06：修复 Lion v2 公式并保护 legacy state
 Ticket 07：收敛 finite gradient gate 与 Loss Scaling 策略
 ```
 
 下一轮代码修改建议按 ticket 边界处理：
 
-- Ticket 06 基于 Ticket 05 harness 修复 Lion beta1/beta2 语义，并保护 legacy state；
-- Ticket 07 是 HITL，进入实现前需确认是否只收敛策略并保留低精度 experimental，还是推进更深的 FP32 master weight 改造。
+- Ticket 07 是 HITL，进入实现前需确认是否只收敛策略并保留低精度 experimental，还是推进更深的 FP32 master weight 改造；
+- Ticket 09 保存恢复 smoke 仍 blocked by 07，Ticket 11 仍 blocked by 09。
 
 本轮不要同时引入：
 

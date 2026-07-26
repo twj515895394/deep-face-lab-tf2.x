@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0.0",
+  "created_at": "2026-07-26T18:35:22+08:00",
+  "root_task": "Batch 1 Ticket 06 - Lion v2 formula and legacy state protection",
+  "workers": [
+    {
+      "creation_attempt": 1,
+      "subtask_attempt": 1,
+      "task_id": "B1-T06-GEMINI-20260726-1835",
+      "thread_id": "019f9dff-ce77-7603-8bea-9581193f5228",
+      "pending_worktree_id": null,
+      "client_thread_id": "client-new-thread:9acda90e-788a-476c-bb2b-b8233ea25655",
+      "control_state": "COMPLETED",
+      "thread_status": "idle",
+      "turn_status": "completed",
+      "last_observed_at": "2026-07-26T18:41:05+08:00",
+      "task_intent": "mutate",
+      "mutation_authority": "isolated-worktree",
+      "result_correlation_id": "B1-T06-RESULT-20260726-1835",
+      "role": "Ticket 06 isolated implementation worker",
+      "model": "cli-proxy/gemini-3.6-flash-high",
+      "requested_model": "cli-proxy/gemini-3.6-flash-high",
+      "platform_accepted_model": "cli-proxy/gemini-3.6-flash-high",
+      "observed_runtime_model": "unknown",
+      "thinking": "high",
+      "route_plan": {
+        "path": ".scratch/batch1-correctness-foundation/reports/route-plan-ticket06-20260726.json",
+        "task_class": "DEEP_AGENTIC_CODE",
+        "minimum_thinking": "high",
+        "candidate_index": 0
+      },
+      "provider_policy": {
+        "provider": "cli_proxy_managed",
+        "credential_path": "CLI_PROXY_API_KEY via local CLI Proxy",
+        "terms_status": "allowed",
+        "data_class": "internal",
+        "provider_allowlist": [
+          "cli_proxy_managed"
+        ],
+        "quota_signal": "unknown"
+      },
+      "materialized": true,
+      "data_ready": true,
+      "status": "completed",
+      "output": "Worker completed Ticket 06 implementation candidate. Main Agent adopted the explicit UserWarning direction for legacy Lion reset, but kept the main workspace implementation with lion_state_schema_version and reset of legacy iterations/c.",
+      "adopted": true,
+      "fallback_reason": null,
+      "archived": true
+    }
+  ]
+}

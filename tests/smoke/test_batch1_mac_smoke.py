@@ -14,6 +14,7 @@ class Batch1MacSmokeTest(unittest.TestCase):
         self.assertIn("python", environment)
         self.assertIn("platform", environment)
         self.assertIn("windows_gpu_validation_required", environment)
+        self.assertEqual("3.9", environment["python"]["minimum_supported"])
         self.assertGreater(
             len(environment["windows_gpu_validation_required"]),
             0,

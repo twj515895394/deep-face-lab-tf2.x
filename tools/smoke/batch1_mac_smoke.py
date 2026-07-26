@@ -13,12 +13,14 @@ import json
 import platform
 import subprocess
 import sys
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Optional
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+MIN_PYTHON_VERSION = (3, 9)
 
 REQUIRED_REPO_FILES = (
     "main.py",
@@ -43,7 +45,7 @@ WINDOWS_GPU_VALIDATION_ITEMS = (
 )
 
 
-def _run_git(args: List[str], repo_root: Path) -> Optional[str]:
+def _run_git(args: list[str], repo_root: Path) -> Optional[str]:
     try:
         result = subprocess.run(
             ["git", *args],
@@ -62,7 +64,7 @@ def _module_available(module_name: str) -> bool:
     return importlib.util.find_spec(module_name) is not None
 
 
-def _import_status(module_name: str) -> Dict[str, Any]:
+def _import_status(module_name: str) -> dict[str, Any]:
     try:
         module = importlib.import_module(module_name)
     except Exception as exc:
@@ -84,7 +86,7 @@ def _iter_python_files(repo_root: Path) -> Iterable[Path]:
         yield path
 
 
-def run_syntax_scan(repo_root: Path = REPO_ROOT) -> Dict[str, Any]:
+def run_syntax_scan(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     repo_root = repo_root.resolve()
     errors = []
     count = 0
@@ -105,7 +107,7 @@ def run_syntax_scan(repo_root: Path = REPO_ROOT) -> Dict[str, Any]:
     }
 
 
-def collect_environment(repo_root: Path = REPO_ROOT) -> Dict[str, Any]:
+def collect_environment(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     repo_root = repo_root.resolve()
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -118,6 +120,7 @@ def collect_environment(repo_root: Path = REPO_ROOT) -> Dict[str, Any]:
             "version": platform.python_version(),
             "executable": sys.executable,
             "implementation": platform.python_implementation(),
+            "minimum_supported": ".".join(str(part) for part in MIN_PYTHON_VERSION),
         },
         "platform": {
             "system": platform.system(),
@@ -137,7 +140,7 @@ def collect_environment(repo_root: Path = REPO_ROOT) -> Dict[str, Any]:
     }
 
 
-def run_lightweight_checks(repo_root: Path = REPO_ROOT) -> Dict[str, Any]:
+def run_lightweight_checks(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     repo_root = repo_root.resolve()
     git_commit = _run_git(["rev-parse", "HEAD"], repo_root)
     git_branch = _run_git(["branch", "--show-current"], repo_root)
@@ -152,7 +155,7 @@ def run_lightweight_checks(repo_root: Path = REPO_ROOT) -> Dict[str, Any]:
     syntax_scan = run_syntax_scan(repo_root)
     checks = {
         "git_metadata_available": git_commit is not None and git_branch is not None,
-        "python_version_supported": sys.version_info >= (3, 6),
+        "python_version_supported": sys.version_info >= MIN_PYTHON_VERSION,
         "required_files": required_files,
         "repo_modules": repo_modules,
         "syntax_scan": syntax_scan,
@@ -178,8 +181,8 @@ def run_lightweight_checks(repo_root: Path = REPO_ROOT) -> Dict[str, Any]:
 
 def write_smoke_outputs(
     output_dir: Path,
-    environment: Dict[str, Any],
-    summary: Dict[str, Any],
+    environment: dict[str, Any],
+    summary: dict[str, Any],
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "environment.json").write_text(
@@ -215,7 +218,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
     repo_root = REPO_ROOT

@@ -22,6 +22,62 @@ try:
 except ImportError:
     OPTIMIZATIONS_AVAILABLE = False
 
+# 这些 helper 故意保持纯 NumPy：macOS 无 GPU 时也能验证样本协议，
+# 避免再次把 priority loss 配置错误静默伪装成正常训练。
+def _sample_shapes(samples):
+    return [getattr(sample, 'shape', None) for sample in samples]
+
+def _validate_eyes_mouth_mask(eyes_mouth_mask, full_mask, domain):
+    if eyes_mouth_mask is None:
+        raise ValueError(f"{domain} eyes/mouth mask is required when eyes_mouth_prio is enabled.")
+    if getattr(eyes_mouth_mask, 'shape', None) != getattr(full_mask, 'shape', None):
+        raise ValueError(
+            f"{domain} eyes/mouth mask shape must match full mask shape: "
+            f"eyes_mouth={getattr(eyes_mouth_mask, 'shape', None)}, "
+            f"full={getattr(full_mask, 'shape', None)}"
+        )
+    mask_dtype = getattr(eyes_mouth_mask, 'dtype', None)
+    full_mask_dtype = getattr(full_mask, 'dtype', None)
+    if mask_dtype is not None and full_mask_dtype is not None:
+        if not np.can_cast(mask_dtype, full_mask_dtype, casting='same_kind'):
+            raise ValueError(
+                f"{domain} eyes/mouth mask dtype {mask_dtype} cannot be safely "
+                f"converted to full mask dtype {full_mask_dtype}."
+            )
+    if not np.all(np.isfinite(eyes_mouth_mask)):
+        raise ValueError(f"{domain} eyes/mouth mask contains inf or nan values.")
+    return eyes_mouth_mask
+
+def _unpack_training_samples(samples, has_eyes_mouth, domain):
+    expected = 4 if has_eyes_mouth else 3
+    if len(samples) != expected:
+        raise ValueError(
+            f"{domain} training samples expected {expected} outputs, got {len(samples)}. "
+            f"shapes={_sample_shapes(samples)}"
+        )
+
+    warped, target, full_mask = samples[:3]
+    eyes_mouth_mask = None
+    if has_eyes_mouth:
+        eyes_mouth_mask = _validate_eyes_mouth_mask(samples[3], full_mask, domain)
+    return warped, target, full_mask, eyes_mouth_mask
+
+def _add_eyes_mouth_masks_to_feed(feed_dict,
+                                  src_placeholder, dst_placeholder,
+                                  target_srcm, target_dstm,
+                                  target_srcm_em, target_dstm_em,
+                                  has_eyes_mouth):
+    if not has_eyes_mouth:
+        return feed_dict
+
+    feed_dict[src_placeholder] = _validate_eyes_mouth_mask(
+        target_srcm_em, target_srcm, 'src'
+    )
+    feed_dict[dst_placeholder] = _validate_eyes_mouth_mask(
+        target_dstm_em, target_dstm, 'dst'
+    )
+    return feed_dict
+
 class SAEHDModel(ModelBase):
 
     #override
@@ -228,6 +284,7 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
             self.options.pop('eyes_prio')
 
         eyes_mouth_prio = self.options['eyes_mouth_prio']
+        self._has_eyes_mouth = bool(eyes_mouth_prio)
 
         archi_split = self.options['archi'].split('-')
 
@@ -550,7 +607,7 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
                         gpu_target_srcm = tf.cast(gpu_target_srcm, tf.bfloat16)
                         gpu_target_dst = tf.cast(gpu_target_dst, tf.bfloat16)
                         gpu_target_dstm = tf.cast(gpu_target_dstm, tf.bfloat16)
-                        if hasattr(self, '_has_eyes_mouth') and self._has_eyes_mouth:
+                        if self._has_eyes_mouth:
                             gpu_target_srcm_em = tf.cast(gpu_target_srcm_em, tf.bfloat16)
                             gpu_target_dstm_em = tf.cast(gpu_target_dstm_em, tf.bfloat16)
 
@@ -595,7 +652,7 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
                     square_loss = tf.reduce_mean ( 10*tf.square ( gpu_target_src_masked_opt - gpu_pred_src_src_masked_opt ), axis=[1,2,3])
                     gpu_src_loss += cast_loss_to_target(square_loss, gpu_src_loss.dtype)
 
-                    if eyes_mouth_prio and hasattr(self, '_has_eyes_mouth') and self._has_eyes_mouth:
+                    if eyes_mouth_prio and self._has_eyes_mouth:
                         # 确保类型匹配
                         eyes_mouth_loss = tf.reduce_mean ( 300*tf.abs ( gpu_target_src*gpu_target_srcm_em - gpu_pred_src_src*gpu_target_srcm_em ), axis=[1,2,3])
                         gpu_src_loss += cast_loss_to_target(eyes_mouth_loss, gpu_src_loss.dtype)
@@ -632,7 +689,7 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
                     square_loss = tf.reduce_mean ( 10*tf.square ( gpu_target_dst_masked_opt - gpu_pred_dst_dst_masked_opt ), axis=[1,2,3])
                     gpu_dst_loss += cast_loss_to_target(square_loss, gpu_dst_loss.dtype)
 
-                    if eyes_mouth_prio and hasattr(self, '_has_eyes_mouth') and self._has_eyes_mouth:
+                    if eyes_mouth_prio and self._has_eyes_mouth:
                         # 确保类型匹配
                         eyes_mouth_dst_loss = tf.reduce_mean ( 300*tf.abs ( gpu_target_dst*gpu_target_dstm_em - gpu_pred_dst_dst*gpu_target_dstm_em ), axis=[1,2,3])
                         gpu_dst_loss += cast_loss_to_target(eyes_mouth_dst_loss, gpu_dst_loss.dtype)
@@ -754,14 +811,19 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
                 _unified_ops.append(src_D_src_dst_loss_gv_op)
 
             def unified_train(warped_src, target_src, target_srcm,
-                               warped_dst, target_dst, target_dstm):
+                               warped_dst, target_dst, target_dstm,
+                               target_srcm_em=None, target_dstm_em=None):
                 fd = {self.warped_src: warped_src, self.target_src: target_src,
                      self.target_srcm: target_srcm,
                      self.warped_dst: warped_dst, self.target_dst: target_dst,
                      self.target_dstm: target_dstm}
-                if self._has_eyes_mouth:
-                    fd[self.target_srcm_em] = np.zeros_like(target_srcm)
-                    fd[self.target_dstm_em] = np.zeros_like(target_dstm)
+                _add_eyes_mouth_masks_to_feed(
+                    fd,
+                    self.target_srcm_em, self.target_dstm_em,
+                    target_srcm, target_dstm,
+                    target_srcm_em, target_dstm_em,
+                    self._has_eyes_mouth,
+                )
                 results = nn.tf_sess.run(_unified_ops, feed_dict=fd)
                 return results[0], results[1]
             self.unified_train = unified_train
@@ -837,8 +899,6 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
                 dst_generators_count = cpu_count // 2
             if ct_mode is not None:
                 src_generators_count = int(src_generators_count * 1.5)
-
-            self._has_eyes_mouth = self.options['eyes_mouth_prio']
 
             _base_src_types = [
                                 {'sample_type': SampleProcessor.SampleType.FACE_IMAGE,'warp':random_warp, 'transform':True, 'channel_type' : SampleProcessor.ChannelType.BGR, 'ct_mode': ct_mode,   'random_hsv_shift_amount' : random_hsv_power,                                        'face_type':self.face_type, 'data_format':nn.data_format, 'resolution': resolution},
@@ -951,12 +1011,18 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
         iter_start_time = time.time()
 
         src_samples, dst_samples = self.generate_next_samples()
-        warped_src, target_src, target_srcm = src_samples[0], src_samples[1], src_samples[2]
-        warped_dst, target_dst, target_dstm = dst_samples[0], dst_samples[1], dst_samples[2]
+        warped_src, target_src, target_srcm, target_srcm_em = _unpack_training_samples(
+            src_samples, self._has_eyes_mouth, 'src'
+        )
+        warped_dst, target_dst, target_dstm, target_dstm_em = _unpack_training_samples(
+            dst_samples, self._has_eyes_mouth, 'dst'
+        )
 
         try:
             src_loss, dst_loss = self.unified_train(warped_src, target_src, target_srcm,
-                                                      warped_dst, target_dst, target_dstm)
+                                                      warped_dst, target_dst, target_dstm,
+                                                      target_srcm_em=target_srcm_em,
+                                                      target_dstm_em=target_dstm_em)
 
             iter_time_ms = (time.time() - iter_start_time) * 1000
 

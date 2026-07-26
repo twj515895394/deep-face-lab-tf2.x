@@ -1,6 +1,7 @@
 import multiprocessing
 import operator
 import os
+import traceback
 from functools import partial
 import time
 
@@ -77,6 +78,86 @@ def _add_eyes_mouth_masks_to_feed(feed_dict,
         target_dstm_em, target_dstm, 'dst'
     )
     return feed_dict
+
+def _get_training_batch_size(model):
+    get_batch_size = getattr(model, 'get_batch_size', None)
+    if get_batch_size is None:
+        return getattr(model, 'batch_size', None)
+    try:
+        return get_batch_size()
+    except Exception:
+        return '<unavailable>'
+
+def _get_training_iter(model):
+    get_iter = getattr(model, 'get_iter', None)
+    if get_iter is None:
+        return getattr(model, 'iter', None)
+    try:
+        return get_iter()
+    except Exception:
+        return '<unavailable>'
+
+def _get_training_precision(model):
+    options = getattr(model, 'options', None)
+    if isinstance(options, dict):
+        return options.get('precision')
+    return getattr(model, 'precision', None)
+
+def _training_exception_context(model, src_samples=None, dst_samples=None):
+    return {
+        'iter': _get_training_iter(model),
+        'batch_size': _get_training_batch_size(model),
+        'resolution': getattr(model, 'resolution', None),
+        'precision': _get_training_precision(model),
+        'has_eyes_mouth': getattr(model, '_has_eyes_mouth', None),
+        'src_shapes': _sample_shapes(src_samples) if src_samples is not None else None,
+        'dst_shapes': _sample_shapes(dst_samples) if dst_samples is not None else None,
+    }
+
+def _is_oom_exception(error):
+    if isinstance(error, MemoryError):
+        return True
+    error_text = ' '.join(str(arg) for arg in getattr(error, 'args', ()) if arg)
+    error_text = f"{type(error).__name__} {error_text}".lower()
+    oom_markers = (
+        'out of memory',
+        'resource exhausted',
+        'resourceexhausted',
+        'cuda_error_out_of_memory',
+        'cublas_status_alloc_failed',
+        'cudnn_status_alloc_failed',
+        'ran out of memory',
+    )
+    if any(marker in error_text for marker in oom_markers):
+        return True
+    if 'non-oom' in error_text or 'non oom' in error_text:
+        return False
+    error_tokens = error_text.replace('_', ' ').replace('-', ' ').split()
+    return 'oom' in error_tokens
+
+def _format_training_exception_message(error, context, is_oom):
+    failure_kind = 'OOM' if is_oom else 'non-OOM'
+    traceback_text = ''.join(
+        traceback.format_exception(type(error), error, error.__traceback__)
+    )
+    return (
+        f"SAEHD training iteration failed ({failure_kind}). "
+        f"Context: iter={context.get('iter')}, "
+        f"batch_size={context.get('batch_size')}, "
+        f"resolution={context.get('resolution')}, "
+        f"precision={context.get('precision')}, "
+        f"has_eyes_mouth={context.get('has_eyes_mouth')}, "
+        f"src_shapes={context.get('src_shapes')}, "
+        f"dst_shapes={context.get('dst_shapes')}\n"
+        f"{traceback_text}"
+    )
+
+def _log_training_exception(error, model, src_samples=None, dst_samples=None):
+    is_oom = _is_oom_exception(error)
+    context = _training_exception_context(model, src_samples, dst_samples)
+    message = _format_training_exception_message(error, context, is_oom)
+    io.log_err(message)
+    return message
 
 class SAEHDModel(ModelBase):
 
@@ -1009,16 +1090,18 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
 
         # Start profiler if available
         iter_start_time = time.time()
-
-        src_samples, dst_samples = self.generate_next_samples()
-        warped_src, target_src, target_srcm, target_srcm_em = _unpack_training_samples(
-            src_samples, self._has_eyes_mouth, 'src'
-        )
-        warped_dst, target_dst, target_dstm, target_dstm_em = _unpack_training_samples(
-            dst_samples, self._has_eyes_mouth, 'dst'
-        )
+        src_samples = None
+        dst_samples = None
 
         try:
+            src_samples, dst_samples = self.generate_next_samples()
+            warped_src, target_src, target_srcm, target_srcm_em = _unpack_training_samples(
+                src_samples, self._has_eyes_mouth, 'src'
+            )
+            warped_dst, target_dst, target_dstm, target_dstm_em = _unpack_training_samples(
+                dst_samples, self._has_eyes_mouth, 'dst'
+            )
+
             src_loss, dst_loss = self.unified_train(warped_src, target_src, target_srcm,
                                                       warped_dst, target_dst, target_dstm,
                                                       target_srcm_em=target_srcm_em,
@@ -1062,12 +1145,9 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
                         self._loss_scale_consecutive_normal_steps = 0
 
         except Exception as e:
-            error_str = str(e).lower()
-            is_oom = 'out of memory' in error_str or 'oom' in error_str or 'resource' in error_str
-
-            if is_oom:
-                raise
-                raise
+            # 训练异常必须保留原始失败语义，避免后续返回路径掩盖根因。
+            _log_training_exception(e, self, src_samples, dst_samples)
+            raise
 
         return ( ('src_loss', np.mean(src_loss) ), ('dst_loss', np.mean(dst_loss) ), )
 

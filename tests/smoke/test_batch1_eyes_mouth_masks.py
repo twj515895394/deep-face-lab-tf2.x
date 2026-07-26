@@ -217,6 +217,154 @@ class EyesMouthMaskHelpersTest(unittest.TestCase):
         self.assertIs(dst_em, captured["kwargs"]["target_dstm_em"])
         self.assertEqual((("src_loss", 1.0), ("dst_loss", 2.0)), result)
 
+    def test_train_iter_reraises_non_oom_exception_with_context_log(self):
+        src_samples = [
+            np.zeros((2, 4, 4, 3), dtype=np.float32),
+            np.ones((2, 4, 4, 3), dtype=np.float32),
+            np.ones((2, 4, 4, 1), dtype=np.float32),
+        ]
+        dst_samples = [
+            np.zeros((2, 4, 4, 3), dtype=np.float32),
+            np.ones((2, 4, 4, 3), dtype=np.float32),
+            np.ones((2, 4, 4, 1), dtype=np.float32),
+        ]
+        original_error = RuntimeError("synthetic trainer failure")
+        model = object.__new__(self.model_module.SAEHDModel)
+        model.get_iter = lambda: 7
+        model.get_batch_size = lambda: 2
+        model.pretrain = False
+        model.pretrain_just_disabled = False
+        model.generate_next_samples = lambda: (src_samples, dst_samples)
+        model._has_eyes_mouth = False
+        model.loss_scale_var = None
+        model.resolution = 128
+        model.options = {"precision": "fp32"}
+
+        def unified_train(*args, **kwargs):
+            raise original_error
+
+        model.unified_train = unified_train
+
+        with mock.patch.object(self.model_module.io, "log_err", create=True) as log_err:
+            with self.assertRaises(RuntimeError) as raised:
+                self.model_module.SAEHDModel.onTrainOneIter(model)
+
+        self.assertIs(original_error, raised.exception)
+        logged = log_err.call_args[0][0]
+        self.assertIn("non-OOM", logged)
+        self.assertIn("iter=7", logged)
+        self.assertIn("batch_size=2", logged)
+        self.assertIn("resolution=128", logged)
+        self.assertIn("precision=fp32", logged)
+        self.assertIn("synthetic trainer failure", logged)
+        self.assertIn("(2, 4, 4, 3)", logged)
+
+    def test_train_iter_reraises_oom_exception_with_context_log(self):
+        src_samples = [
+            np.zeros((1, 4, 4, 3), dtype=np.float32),
+            np.ones((1, 4, 4, 3), dtype=np.float32),
+            np.ones((1, 4, 4, 1), dtype=np.float32),
+        ]
+        dst_samples = [
+            np.zeros((1, 4, 4, 3), dtype=np.float32),
+            np.ones((1, 4, 4, 3), dtype=np.float32),
+            np.ones((1, 4, 4, 1), dtype=np.float32),
+        ]
+        original_error = RuntimeError("Resource exhausted: OOM when allocating tensor")
+        model = object.__new__(self.model_module.SAEHDModel)
+        model.get_iter = lambda: 8
+        model.get_batch_size = lambda: 1
+        model.pretrain = True
+        model.pretrain_just_disabled = False
+        model.generate_next_samples = lambda: (src_samples, dst_samples)
+        model._has_eyes_mouth = False
+        model.loss_scale_var = None
+        model.resolution = 256
+        model.options = {"precision": "bf16"}
+
+        def unified_train(*args, **kwargs):
+            raise original_error
+
+        model.unified_train = unified_train
+
+        with mock.patch.object(self.model_module.io, "log_err", create=True) as log_err:
+            with self.assertRaises(RuntimeError) as raised:
+                self.model_module.SAEHDModel.onTrainOneIter(model)
+
+        self.assertIs(original_error, raised.exception)
+        logged = log_err.call_args[0][0]
+        self.assertIn("OOM", logged)
+        self.assertIn("iter=8", logged)
+        self.assertIn("batch_size=1", logged)
+        self.assertIn("resolution=256", logged)
+        self.assertIn("precision=bf16", logged)
+        self.assertIn("Resource exhausted", logged)
+
+    def test_train_iter_reraises_sample_protocol_errors(self):
+        src_samples = [
+            np.zeros((2, 4, 4, 3), dtype=np.float32),
+            np.ones((2, 4, 4, 3), dtype=np.float32),
+            np.ones((2, 4, 4, 1), dtype=np.float32),
+        ]
+        dst_samples = [
+            np.zeros((2, 4, 4, 3), dtype=np.float32),
+            np.ones((2, 4, 4, 3), dtype=np.float32),
+            np.ones((2, 4, 4, 1), dtype=np.float32),
+        ]
+        model = object.__new__(self.model_module.SAEHDModel)
+        model.get_iter = lambda: 9
+        model.get_batch_size = lambda: 2
+        model.pretrain = True
+        model.pretrain_just_disabled = False
+        model.generate_next_samples = lambda: (src_samples, dst_samples)
+        model._has_eyes_mouth = True
+        model.loss_scale_var = None
+        model.resolution = 128
+        model.options = {"precision": "fp32"}
+        model.unified_train = mock.Mock()
+
+        with mock.patch.object(self.model_module.io, "log_err", create=True) as log_err:
+            with self.assertRaisesRegex(ValueError, "expected 4 outputs"):
+                self.model_module.SAEHDModel.onTrainOneIter(model)
+
+        self.assertFalse(model.unified_train.called)
+        logged = log_err.call_args[0][0]
+        self.assertIn("non-OOM", logged)
+        self.assertIn("src_shapes", logged)
+        self.assertIn("dst_shapes", logged)
+
+    def test_training_oom_classifier_is_specific(self):
+        self.assertTrue(
+            self.model_module._is_oom_exception(
+                MemoryError()
+            )
+        )
+        self.assertTrue(
+            self.model_module._is_oom_exception(
+                RuntimeError("Resource exhausted: OOM")
+            )
+        )
+        self.assertTrue(
+            self.model_module._is_oom_exception(
+                RuntimeError("CUDA_ERROR_OUT_OF_MEMORY")
+            )
+        )
+        self.assertTrue(
+            self.model_module._is_oom_exception(
+                RuntimeError("OOM when allocating tensor")
+            )
+        )
+        self.assertFalse(
+            self.model_module._is_oom_exception(
+                RuntimeError("synthetic non-oom failure")
+            )
+        )
+        self.assertFalse(
+            self.model_module._is_oom_exception(
+                RuntimeError("resource path not found")
+            )
+        )
+
     def test_numpy_priority_loss_has_nonzero_synthetic_contribution(self):
         target = np.zeros((1, 4, 4, 3), dtype=np.float32)
         prediction = np.zeros((1, 4, 4, 3), dtype=np.float32)

@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0.0",
+  "created_at": "2026-07-26T20:31:56+08:00",
+  "ticket": "11-batch1-compatibility-matrix-and-handoff",
+  "creation_attempts": 1,
+  "workers": [
+    {
+      "creation_attempt": 1,
+      "subtask_attempt": 1,
+      "task_id": "B1-T11-GEMINI-REVIEW-20260726-2031",
+      "thread_id": "019f9e6a-564f-75b3-8fd3-a55337e9aa39",
+      "pending_worktree_id": null,
+      "control_state": "COMPLETED",
+      "thread_status": "idle",
+      "turn_status": "completed",
+      "last_observed_at": "2026-07-26T20:33:55+08:00",
+      "task_intent": "inspect",
+      "mutation_authority": "none",
+      "result_correlation_id": "B1-T11-RESULT-20260726-2031",
+      "role": "Ticket 11 Batch 1 compatibility and handoff independent reviewer",
+      "model": "cli-proxy/gemini-3.6-flash-high",
+      "requested_model": "cli-proxy/gemini-3.6-flash-high",
+      "platform_accepted_model": "cli-proxy/gemini-3.6-flash-high",
+      "observed_runtime_model": "unknown",
+      "thinking": "high",
+      "route_plan": {
+        "path": ".scratch/batch1-correctness-foundation/reports/route-plan-ticket11-20260726.json",
+        "task_class": "MEDIUM_HIGH_QUALITY_WORKER",
+        "minimum_thinking": "high",
+        "candidates": [
+          {
+            "model": "cli-proxy/gemini-3.6-flash-high",
+            "thinking": "high"
+          }
+        ],
+        "fallback_pool": []
+      },
+      "provider_policy": {
+        "provider": "cli_proxy_managed",
+        "credential_path": "cli_proxy_managed_local",
+        "terms_status": "allowed",
+        "data_class": "internal",
+        "provider_allowlist": [
+          "cli_proxy_managed"
+        ],
+        "quota_signal": "gemini_quota_unknown"
+      },
+      "materialized": true,
+      "data_ready": true,
+      "status": "completed",
+      "output": "Independent inspect-only review completed. Main Agent partially adopted compatibility matrix structure, Windows GPU validation dimensions, and risk framing; rejected worker AST scan count 174 in favor of main Agent measured 177.",
+      "adopted": true,
+      "fallback_reason": "grok_quota_exhausted_by_user",
+      "archived": true
+    }
+  ]
+}

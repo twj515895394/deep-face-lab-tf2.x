@@ -1,6 +1,6 @@
 # Batch 1 Correctness Foundation
 
-Status: ready-for-agent
+Status: done-macos-lightweight
 
 ## 背景
 
@@ -9,8 +9,8 @@ Status: ready-for-agent
 当前状态：
 
 - Batch 1 详细设计已完成。
-- Ticket 01 / 02 / 03 / 04 / 05 / 06 / 07 / 08 / 09 / 10 已完成 macOS 轻量实现与验证。
-- 下一步从 Batch 1 兼容矩阵与 handoff 汇总继续。
+- Ticket 01 / 02 / 03 / 04 / 05 / 06 / 07 / 08 / 09 / 10 / 11 已完成 macOS 轻量实现、验证与复核。
+- 下一步进入 Batch 2 前置设计 / 任务拆分；Windows GPU 真实训练、保存恢复与 Merge 质量仍待补证。
 
 ## 执行边界
 
@@ -32,7 +32,7 @@ Status: ready-for-agent
 
 优先领取所有阻塞依赖均已完成的 issue。当前 frontier：
 
-- `11-batch1-compatibility-matrix-and-handoff.md`
+- Batch 2 前置设计 / 任务拆分（待新建 ticket）
 
 已完成：
 
@@ -46,6 +46,7 @@ Status: ready-for-agent
 - `08-enhancement-feature-flags.md`
 - `09-training-save-resume-smoke.md`
 - `10-merge-default-path-smoke.md`
+- `11-batch1-compatibility-matrix-and-handoff.md`
 
 ## 参考文档
 

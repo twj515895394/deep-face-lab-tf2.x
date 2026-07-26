@@ -58,16 +58,19 @@ Phase 5：Mask、Temporal、联调与人工验收
 Phase 6：Linux 服务化与 UI（核心引擎稳定后）
 ```
 
-当前阶段：**Phase 2 / Batch 1 详细设计已经完成，准备进入首批代码修改。**
+当前阶段：**Phase 2 / Batch 1 macOS 轻量实现与复核已完成，准备进入 Batch 2 前置设计 / 任务拆分。**
 
 当前代码状态：
 
 ```text
 Batch 1 详细设计：已完成
-Eyes / Mouth Priority 问题：已通过源码确认，尚未修复
-低精度与 optimizer state：已发现结构性风险，尚未完成运行验证
-Feature Flag 骨架：尚未实现
-Training / Merge smoke test：尚未实现
+Eyes / Mouth Priority 真实 mask 修复：macOS 轻量验证已完成
+训练异常语义：macOS 轻量验证已完成
+Precision Contract / dtype 审计：macOS 轻量验证已完成
+Optimizer roundtrip / Lion v2 / finite gate：macOS 轻量验证已完成
+Enhancement Feature Flag 骨架：macOS 轻量验证已完成，默认全部关闭
+Training save/resume 与 Merge 默认路径 smoke：macOS 轻量验证已完成
+Windows GPU 真实训练、保存恢复、Merge 质量与 FP16/BF16 稳定性：待补证
 ```
 
 最新交接入口：
@@ -93,7 +96,7 @@ Training / Merge smoke test：尚未实现
 3. [Merge / 合成架构分析](analysis/merging-architecture-analysis.md)
 4. [TF2.x 源码树分析](implementation/deepfacelab-tf2x-source-tree-analysis.md)
 
-### 3.3 开始 Batch 1 代码开发
+### 3.3 Batch 1 状态复核与 Batch 2 准备
 
 按以下顺序阅读：
 
@@ -104,15 +107,17 @@ Training / Merge smoke test：尚未实现
 5. [代码修改地图](implementation/deepfacelab-code-modification-map.md)
 6. [人工质量验收与开发验证标准](implementation/manual-quality-acceptance-and-development-validation-standard.md)
 
-第一份代码提交只应处理：
+Batch 1 已完成 macOS 轻量实现与复核。进入 Batch 2 前应先处理：
 
 ```text
-Eyes / Mouth Priority 真实 mask 传递
+Batch 2 ticket 边界
 +
-对应的最小 smoke test
+Windows GPU 验证 checklist
++
+默认关闭的新增能力骨架
 ```
 
-不要在同一个提交中同时加入新 Loss、Sampling、Identity Geometry 或 Shape-aware Merge。
+不要在同一个提交中同时加入新 Loss、Sampling、Identity Geometry、Shape-aware Merge、UI 或服务化改造。
 
 ### 3.4 后续训练增强开发
 
@@ -345,11 +350,11 @@ Shape-aware Merge
 当前 Batch 1 的准确状态是：
 
 ```text
-详细设计完成
+macOS 轻量实现与复核完成
 ≠
-代码已实现
+Windows GPU / TensorFlow / SAEHD 真实训练验收完成
 ≠
-工程已验证
+真实 Merge 视觉质量验收完成
 ```
 
 ---

@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0.0",
+  "created_at": "2026-07-26T10:05:59Z",
+  "task_id": "B1-T10-GROK-20260726-1806",
+  "task_class": "DEEP_AGENTIC_CODE",
+  "risk": "medium",
+  "minimum_thinking": "high",
+  "provider_allowlist": ["cli_proxy_managed"],
+  "provider_status": {
+    "cli_proxy_managed": "allowed"
+  },
+  "data_allowed_providers": ["cli_proxy_managed"],
+  "explicit_user_request": true,
+  "model_development_requested": true,
+  "task_intent": "mutate",
+  "mutation_authority": "isolated-worktree",
+  "current_main_model": "unknown",
+  "explicit_user_models": [],
+  "candidates": [
+    {
+      "model": "cli-proxy/grok-4.5",
+      "thinking": "high"
+    }
+  ],
+  "fallback_pool": [
+    {
+      "model": "cli-proxy/gemini-3.6-flash-high",
+      "thinking": "high",
+      "weight": 10
+    }
+  ],
+  "max_worker_threads": 2,
+  "max_followups_per_thread": 1,
+  "local_probe_evidence": {
+    "checked_by_main_agent": true,
+    "probe_url": "http://127.0.0.1:10100/v1/responses",
+    "grok": {
+      "route_eligible": true,
+      "semantic_probe": "pass",
+      "checked_at": "2026-07-26T10:03:05.261229+00:00"
+    },
+    "gemini": {
+      "route_eligible": true,
+      "semantic_probe": "pass",
+      "checked_at": "2026-07-26T10:03:00.131808+00:00"
+    }
+  },
+  "notes": [
+    "Ticket 10 is limited to legacy MergeMasked default-path smoke; do not implement Shape-aware Merge.",
+    "Shared issue, report, spec, and handoff files are owned by the main agent."
+  ]
+}

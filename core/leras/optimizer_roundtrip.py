@@ -5,7 +5,7 @@
 2. 比较连续训练与保存恢复后下一步更新误差；
 3. 在 macOS 缺 TensorFlow 时提供与源码公式对齐的 NumPy 轻量替代。
 
-不在此修改 Lion 公式语义；当前 Lion 轨迹按仓库现有实现（只用 beta_1 更新 c）审计。
+Ticket 06 后 Lion 轨迹按标准 v2 语义审计，并显式保护旧 slot state。
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ resolve_precision_contract = _pc.resolve_precision_contract
 
 SUPPORTED_OPTIMIZERS = ("adabelief", "rmsprop", "lion")
 DEFAULT_DTYPE = "float32"
+LION_STATE_SCHEMA_VERSION = 2
 
 
 def _as_float_array(value: Any, dtype: str = DEFAULT_DTYPE) -> np.ndarray:
@@ -144,15 +145,14 @@ def numpy_optimizer_step(
         return new_w.astype(w.dtype, copy=False), next_state
 
     if opt == "lion":
-        # 保持与当前 Lion.py 一致：c 用 beta_1 更新，beta_2 未参与。
-        # Ticket 06 才会修复公式；这里只建立可观测基线。
         c = _as_float_array(state.get("c", np.zeros_like(w)), dtype_name)
-        c_t = beta_1 * c + (1.0 - beta_1) * g
-        m_t = np.sign(c_t)
+        update_direction = np.sign(beta_1 * c + (1.0 - beta_1) * g)
+        c_t = beta_2 * c + (1.0 - beta_2) * g
         step_lr = _lr_at_step(lr, iters, lr_cos, dtype_name)
-        update = -step_lr * m_t
+        update = -step_lr * update_direction
         new_w = w + update
         next_state["c"] = c_t.astype(w.dtype, copy=False)
+        next_state["lion_state_schema_version"] = LION_STATE_SCHEMA_VERSION
         return new_w.astype(w.dtype, copy=False), next_state
 
     raise ValueError(f"unsupported optimizer: {name}")
@@ -185,16 +185,24 @@ def serialize_optimizer_state(name: str, weight: np.ndarray, state: Mapping[str,
         }
     elif opt == "lion":
         payload["c"] = np.asarray(state["c"]).copy()
+        payload["lion_state_schema_version"] = int(
+            state.get("lion_state_schema_version", LION_STATE_SCHEMA_VERSION)
+        )
         payload["slot_dtypes"] = {
             "c": _dtype_name(payload["c"]),
             "iterations": "int64",
+            "lion_state_schema_version": "int64",
         }
     else:
         raise ValueError(f"unsupported optimizer: {name}")
     return payload
 
 
-def deserialize_optimizer_state(payload: Mapping[str, Any]) -> Tuple[np.ndarray, Dict[str, Any]]:
+def deserialize_optimizer_state(
+    payload: Mapping[str, Any],
+    *,
+    reset_legacy_lion_state: bool = True,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
     opt = str(payload.get("optimizer", "")).strip().lower()
     weight = np.asarray(payload["weight"]).copy()
     state: Dict[str, Any] = {"iterations": int(payload.get("iterations", 0))}
@@ -204,7 +212,21 @@ def deserialize_optimizer_state(payload: Mapping[str, Any]) -> Tuple[np.ndarray,
     elif opt == "rmsprop":
         state["acc"] = np.asarray(payload["acc"]).copy()
     elif opt == "lion":
-        state["c"] = np.asarray(payload["c"]).copy()
+        version = payload.get("lion_state_schema_version")
+        if int(version or 0) >= LION_STATE_SCHEMA_VERSION:
+            state["c"] = np.asarray(payload["c"]).copy()
+            state["lion_state_schema_version"] = int(version)
+            state["legacy_state_reset"] = False
+        elif reset_legacy_lion_state:
+            # 旧 c 是 beta1 更新后的方向缓存，不是 v2 的 beta2 momentum。
+            # 保留主权重，但重置 optimizer slot，避免训练恢复后静默混用两种语义。
+            state["iterations"] = 0
+            state["c"] = np.zeros_like(weight)
+            state["lion_state_schema_version"] = LION_STATE_SCHEMA_VERSION
+            state["legacy_state_reset"] = True
+            state["legacy_iterations"] = int(payload.get("iterations", 0))
+        else:
+            raise ValueError("legacy Lion optimizer state lacks v2 schema marker")
     else:
         raise ValueError(f"unsupported optimizer payload: {opt}")
     return weight, state
@@ -295,6 +317,7 @@ def run_numpy_optimizer_roundtrip(
         cont_state["acc"] = np.zeros_like(cont_w)
     else:
         cont_state["c"] = np.zeros_like(cont_w)
+        cont_state["lion_state_schema_version"] = LION_STATE_SCHEMA_VERSION
 
     for step_idx in range(warmup_steps + 1):
         cont_w, cont_state = numpy_optimizer_step(opt, cont_w, grad_list[step_idx], cont_state, **common_kwargs)
@@ -307,6 +330,7 @@ def run_numpy_optimizer_roundtrip(
         rt_state["acc"] = np.zeros_like(rt_w)
     else:
         rt_state["c"] = np.zeros_like(rt_w)
+        rt_state["lion_state_schema_version"] = LION_STATE_SCHEMA_VERSION
 
     for step_idx in range(warmup_steps):
         rt_w, rt_state = numpy_optimizer_step(opt, rt_w, grad_list[step_idx], rt_state, **common_kwargs)
@@ -317,7 +341,7 @@ def run_numpy_optimizer_roundtrip(
     reload_weight_error = _max_abs_error(rt_w, loaded_w)
     reload_slot_errors = {"iterations": float(abs(int(rt_state["iterations"]) - int(loaded_state["iterations"])))}
     for key in rt_state:
-        if key == "iterations":
+        if key in ("iterations", "lion_state_schema_version"):
             continue
         reload_slot_errors[key] = _max_abs_error(rt_state[key], loaded_state[key])
     max_abs_reload_error = max([reload_weight_error, *reload_slot_errors.values()]) if reload_slot_errors else reload_weight_error
@@ -335,7 +359,7 @@ def run_numpy_optimizer_roundtrip(
         "iterations": float(abs(int(cont_state["iterations"]) - int(resume_state["iterations"]))),
     }
     for key in cont_state:
-        if key == "iterations":
+        if key in ("iterations", "lion_state_schema_version"):
             continue
         update_errors[key] = _max_abs_error(cont_state[key], resume_state[key])
     max_abs_update_error = max(update_errors.values()) if update_errors else 0.0
@@ -393,7 +417,7 @@ def run_numpy_optimizer_roundtrip(
         "resumed_final_state": {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in resume_state.items()},
         "precision_audit": audit,
         "lion_formula_note": (
-            "current_source_uses_beta1_only_for_c; beta2_not_applied_in_ticket_05"
+            "lion_v2_uses_beta1_for_update_direction_and_beta2_for_momentum"
             if opt == "lion"
             else None
         ),

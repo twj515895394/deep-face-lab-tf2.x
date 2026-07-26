@@ -7,9 +7,9 @@ Google Brain 2023 - https://arxiv.org/abs/2302.06675
   更简洁、更省内存、对学习率更鲁棒、泛化能力更强
 
 更新公式：
-  c_t = β₁·c_{t-1} + (1-β₁)·g_t        (动量更新)
-  m_t = sign(c_t)                         (只取符号！)
-  θ_{t+1} = θ_t - lr · m_t               (直接乘法)
+  u_t = sign(β₁·c_{t-1} + (1-β₁)·g_t)   (更新方向)
+  c_t = β₂·c_{t-1} + (1-β₂)·g_t         (动量状态)
+  θ_{t+1} = θ_t - lr · u_t              (直接乘法)
 
 vs AdaBelief 对比：
   - 内存少 15%（只需动量c，不需要方差v）
@@ -19,10 +19,15 @@ vs AdaBelief 对比：
 """
 
 import numpy as np
+import pickle
+import warnings
+from pathlib import Path
 from core.leras import nn
 from tensorflow.python.ops import control_flow_ops, math_ops, state_ops
 
 tf = nn.tf
+
+LION_STATE_SCHEMA_VERSION = 2
 
 
 class Lion(nn.OptimizerBase):
@@ -43,12 +48,58 @@ class Lion(nn.OptimizerBase):
         with tf.device('/CPU:0'):
             with tf.variable_scope(self.name):
                 self.iterations = tf.Variable(0, dtype=tf.int64, name='iters')
+                self.state_schema_version = tf.Variable(
+                    float(LION_STATE_SCHEMA_VERSION),
+                    dtype=tf.float32,
+                    name='lion_state_schema_version',
+                    trainable=False,
+                )
 
         self.c_dict = {}
         self.lr_rnds_dict = {}
 
     def get_weights(self):
-        return [self.iterations] + list(self.c_dict.values())
+        return [self.iterations, self.state_schema_version] + list(self.c_dict.values())
+
+    def load_weights(self, filename):
+        """Load optimizer state, resetting legacy Lion slots instead of reusing them.
+
+        旧 Lion 的 `c` slot 是 beta1 语义，新 Lion v2 的 `c` slot 是 beta2
+        momentum。二者数值含义不同，直接续用会污染后续训练轨迹；因此检测到旧
+        optimizer 文件时只保留模型主权重由其它 Saveable 加载，本 optimizer state
+        回到干净初始状态，并通过标记字段避免之后再次误判。
+        """
+        filepath = Path(filename)
+        if not filepath.exists():
+            return False
+
+        legacy_state = False
+        try:
+            payload = pickle.loads(filepath.read_bytes())
+            if isinstance(payload, dict):
+                legacy_state = not any(
+                    str(key).startswith('lion_state_schema_version')
+                    for key in payload
+                )
+        except Exception:
+            return False
+
+        loaded = super().load_weights(filename)
+        if loaded and legacy_state:
+            warnings.warn(
+                f"[Lion] Legacy optimizer state detected in {filename}; "
+                "resetting iterations and momentum slot for Lion v2 compatibility.",
+                UserWarning,
+            )
+            nn.batch_set_value(
+                [(self.iterations, self.iterations.initializer),
+                 (self.state_schema_version, self.state_schema_version.initializer)] +
+                [(c, c.initializer) for c in self.c_dict.values()]
+            )
+            self.legacy_state_was_reset = True
+        else:
+            self.legacy_state_was_reset = False
+        return loaded
 
     def initialize_variables(self, trainable_weights, vars_on_cpu=True, lr_dropout_on_cpu=False):
         e = tf.device('/CPU:0') if vars_on_cpu else None
@@ -99,8 +150,8 @@ class Lion(nn.OptimizerBase):
 
             c = self.c_dict[v.name]
 
-            c_t = self.beta_1 * c + (1.0 - self.beta_1) * g
-            m_t = tf.sign(c_t)
+            update_direction = tf.sign(self.beta_1 * c + (1.0 - self.beta_1) * g)
+            c_t = self.beta_2 * c + (1.0 - self.beta_2) * g
 
             lr = tf.constant(self.lr, dtype=g.dtype)
             if self.lr_cos != 0:
@@ -109,7 +160,7 @@ class Lion(nn.OptimizerBase):
                     (2 * 3.1415926535 / float(self.lr_cos))
                 ) + 1.0) / 2.0
 
-            update = -lr * m_t
+            update = -lr * update_direction
 
             if self.lr_dropout != 1.0:
                 lr_rnd = self.lr_rnds_dict[v.name]

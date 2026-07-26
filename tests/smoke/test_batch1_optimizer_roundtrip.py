@@ -79,7 +79,7 @@ class Batch1OptimizerRoundtripTest(unittest.TestCase):
         self.assertEqual(0.0, report["update_errors"]["weight"])
         self.assertEqual(0.0, report["update_errors"]["acc"])
 
-    def test_lion_numpy_roundtrip_is_exact_without_changing_formula(self):
+    def test_lion_numpy_roundtrip_is_exact_with_v2_formula(self):
         report = self.rt.run_numpy_optimizer_roundtrip("lion", lr=1e-4, beta_1=0.9, beta_2=0.99)
 
         self.assertEqual("lion", report["optimizer"])
@@ -88,20 +88,101 @@ class Batch1OptimizerRoundtripTest(unittest.TestCase):
         self.assertEqual(0.0, report["max_abs_reload_error"])
         self.assertEqual(0.0, report["max_abs_update_error"])
         self.assertEqual(
-            "current_source_uses_beta1_only_for_c; beta2_not_applied_in_ticket_05",
+            "lion_v2_uses_beta1_for_update_direction_and_beta2_for_momentum",
             report["lion_formula_note"],
         )
 
         base = self.rt.run_numpy_optimizer_roundtrip("lion", beta_2=0.50)
         alt = self.rt.run_numpy_optimizer_roundtrip("lion", beta_2=0.99)
-        self.assertEqual(0.0, self.rt._max_abs_error(base["continuous_final_weight"], alt["continuous_final_weight"]))
-        self.assertEqual(
-            0.0,
+        self.assertGreater(
             self.rt._max_abs_error(
                 base["continuous_final_state"]["c"],
                 alt["continuous_final_state"]["c"],
             ),
+            0.0,
         )
+        self.assertEqual(2, report["continuous_final_state"]["lion_state_schema_version"])
+        self.assertEqual("int64", report["serialized_slot_dtypes"]["lion_state_schema_version"])
+
+    def test_lion_update_direction_uses_beta1_but_state_uses_beta2(self):
+        import numpy as np
+
+        weight = np.asarray([1.0, -1.0], dtype=np.float32)
+        grad = np.asarray([0.25, -0.50], dtype=np.float32)
+        state = {
+            "iterations": 0,
+            "c": np.asarray([0.10, 0.20], dtype=np.float32),
+            "lion_state_schema_version": 2,
+        }
+
+        new_weight, new_state = self.rt.numpy_optimizer_step(
+            "lion",
+            weight,
+            grad,
+            state,
+            lr=0.1,
+            beta_1=0.8,
+            beta_2=0.3,
+        )
+
+        expected_direction = np.sign(0.8 * state["c"] + 0.2 * grad)
+        expected_c = 0.3 * state["c"] + 0.7 * grad
+        self.assertEqual(0.0, self.rt._max_abs_error(weight - 0.1 * expected_direction, new_weight))
+        self.assertEqual(0.0, self.rt._max_abs_error(expected_c, new_state["c"]))
+
+    def test_lion_legacy_state_is_reset_on_deserialize(self):
+        import numpy as np
+
+        weight = np.asarray([1.0, 2.0], dtype=np.float32)
+        legacy_payload = {
+            "optimizer": "lion",
+            "schema_version": 1,
+            "weight": weight,
+            "iterations": 7,
+            "c": np.asarray([0.3, -0.4], dtype=np.float32),
+            "slot_dtypes": {"c": "float32", "iterations": "int64"},
+        }
+
+        loaded_w, loaded_state = self.rt.deserialize_optimizer_state(legacy_payload)
+
+        self.assertEqual(0.0, self.rt._max_abs_error(weight, loaded_w))
+        self.assertEqual(0, loaded_state["iterations"])
+        self.assertEqual(7, loaded_state["legacy_iterations"])
+        self.assertTrue(loaded_state["legacy_state_reset"])
+        self.assertEqual(2, loaded_state["lion_state_schema_version"])
+        self.assertEqual(0.0, self.rt._max_abs_error(np.zeros_like(weight), loaded_state["c"]))
+
+    def test_lion_legacy_state_can_be_rejected_for_strict_audit(self):
+        import numpy as np
+
+        legacy_payload = {
+            "optimizer": "lion",
+            "weight": np.asarray([1.0], dtype=np.float32),
+            "iterations": 1,
+            "c": np.asarray([0.2], dtype=np.float32),
+        }
+
+        with self.assertRaises(ValueError):
+            self.rt.deserialize_optimizer_state(legacy_payload, reset_legacy_lion_state=False)
+
+    def test_lion_v2_serialized_state_preserves_momentum(self):
+        import numpy as np
+
+        weight = np.asarray([0.75, -1.25], dtype=np.float32)
+        state = {
+            "iterations": 4,
+            "c": np.asarray([0.11, -0.22], dtype=np.float32),
+            "lion_state_schema_version": 2,
+        }
+
+        payload = self.rt.serialize_optimizer_state("lion", weight, state)
+        loaded_w, loaded_state = self.rt.deserialize_optimizer_state(payload)
+
+        self.assertEqual(0.0, self.rt._max_abs_error(weight, loaded_w))
+        self.assertEqual(4, loaded_state["iterations"])
+        self.assertFalse(loaded_state["legacy_state_reset"])
+        self.assertEqual(2, loaded_state["lion_state_schema_version"])
+        self.assertEqual(0.0, self.rt._max_abs_error(state["c"], loaded_state["c"]))
 
     def test_all_supported_optimizers_report_errors_and_slot_dtypes(self):
         bundle = self.rt.run_all_numpy_optimizer_roundtrips()

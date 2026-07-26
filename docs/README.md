@@ -1,219 +1,287 @@
-# DeepFaceLab TF2.x 文档总索引与演进大纲
+# DeepFaceLab TF2.x 文档总索引
 
-> 文档版本：v1.1  
-> 更新日期：2026-07-25  
-> 作用：统一管理项目分析、优化设计、验证方案和未来 UI 服务化文档。
+> 文档版本：v2.0  
+> 更新日期：2026-07-26  
+> 定位：项目文档导航。实际开发顺序以统一总实施计划为准。
 
 ---
 
-## 1. 文档体系目标
+## 1. 唯一实施入口
 
-本目录用于回答四类问题：
+后续进行代码开发、任务拆分、Agent 协作或进度判断时，先阅读：
 
-1. **当前项目是什么**：当前架构、代码模块、TF2.x 升级范围和真实实现状态。
-2. **下一步优化什么**：训练、切脸、Faceset、合成各链路的优化方向和优先级。
-3. **如何证明优化有效**：正确性审计、Benchmark、质量评估和兼容性测试。
-4. **何时进入 UI 与 Linux 服务化**：只有核心引擎稳定、配置结构化、状态可观测后才进入第三阶段。
+- [增强版总实施计划](implementation/enhanced-dfl-master-implementation-plan.md)
 
-项目总体顺序固定为：
+该文档已经统一串联：
 
 ```text
-Phase 1：项目现状与 TF2.x 升级分析
-                 ↓
-Phase 2：核心引擎优化
-  训练正确性 → Benchmark → 训练性能 → 训练质量
-                 ↓
-        Extract / Faceset 优化
-                 ↓
-             Merge 优化
-                 ↓
-Phase 3：Linux 后端服务化与前端 UI
+训练正确性
+   ↓
+配置与扩展框架
+   ↓
+数据与采样增强
+   ↓
+身份外观与身份几何训练
+   ↓
+Source Shape Template
+   ↓
+Hybrid Landmark
+   ↓
+Shape-aware Warp / Mask
+   ↓
+Temporal Stabilization
+   ↓
+开发验证与人工质量验收
 ```
 
-当前最重要阶段：**Phase 2 的训练核心链路优化**。
+专项文档用于解释细节，不再各自决定总体实施顺序。
 
 ---
 
-## 2. 推荐阅读路径
+## 2. 项目路线
 
-### 2.1 快速了解项目
+```text
+Phase 1：现状、TF2.x 与源码基线
+                  ↓
+Phase 2：训练正确性与扩展骨架
+                  ↓
+Phase 3：训练质量、Identity Geometry 与 Curriculum
+                  ↓
+Phase 4：Source Shape Template 与 Shape-aware Merge
+                  ↓
+Phase 5：Mask、Temporal、联调与人工验收
+                  ↓
+Phase 6：Linux 服务化与 UI（核心引擎稳定后）
+```
+
+当前阶段：**从文档设计进入 Phase 2 的实际代码开发准备**。
+
+---
+
+## 3. 推荐阅读路径
+
+### 3.1 快速了解项目
 
 1. [当前项目架构与升级分析](analysis/dfl-current-project-overview.md)
 2. [TF2.x 升级实现分析](analysis/dfl-tf2-upgrade-analysis.md)
 3. [实现状态与风险矩阵](analysis/implementation-status-and-risk-matrix.md)
+4. [增强版总实施计划](implementation/enhanced-dfl-master-implementation-plan.md)
 
-### 2.2 按完整业务流程阅读
+### 3.2 了解完整处理链
 
 1. [Extract / 切脸架构分析](analysis/extraction-architecture-analysis.md)
 2. [训练架构分析](analysis/training-architecture-analysis.md)
 3. [Merge / 合成架构分析](analysis/merging-architecture-analysis.md)
+4. [TF2.x 源码树分析](implementation/deepfacelab-tf2x-source-tree-analysis.md)
 
-### 2.3 开始训练优化
+### 3.3 开始训练侧开发
 
-1. [训练架构分析](analysis/training-architecture-analysis.md)
-2. [实现状态与风险矩阵](analysis/implementation-status-and-risk-matrix.md)
-3. [训练算法优化候选方案](design/dfl-training-algorithm-optimizations.md)
-4. `optimization/training-correctness-audit.md`（下一份重点文档，待创建）
-5. `validation/training-benchmark-specification.md`（待创建）
+1. [训练正确性审计](optimization/training-correctness-audit.md)
+2. [训练调用链分析](implementation/deepfacelab-training-call-chain-analysis.md)
+3. [训练质量算法路线](optimization/training-quality-algorithm-roadmap.md)
+4. [src / dst 训练质量设计](optimization/src-dst-training-quality-optimization-design.md)
+5. [src 脸型保持训练设计](optimization/src-face-shape-preservation-design.md)
+6. [训练增强实施计划](implementation/training-enhancement-implementation-plan.md)
 
-### 2.4 了解已有升级设想
+### 3.4 开始脸型与 Shape-aware Merge 开发
 
-1. [TF2 升级优势分析](design/dfl-tf2-upgrade-advantages-analysis.md)
-2. [训练算法优化候选方案](design/dfl-training-algorithm-optimizations.md)
+1. [src 脸型训练与 Shape-aware Merge 总设计](optimization/src-face-shape-training-and-shape-aware-merge-design.md)
+2. [Shape-aware Merge 实现设计](optimization/shape-aware-merge-implementation-design.md)
+3. [Merger 调用链分析](implementation/deepfacelab-merger-call-chain-analysis.md)
+4. [Shape-aware Merge 实施计划](implementation/merge-shape-aware-implementation-plan.md)
 
-> 注意：`design/` 下的文档包含候选方案和预期收益，不代表功能已经完成或收益已经验证。真实实现状态以 `analysis/implementation-status-and-risk-matrix.md` 为准。
+### 3.5 工程接入与验收
 
-### 2.5 未来 UI 与 Linux 服务化
+1. [代码修改地图](implementation/deepfacelab-code-modification-map.md)
+2. [源码审计](implementation/deepfacelab-source-code-audit.md)
+3. [配置与扩展架构](implementation/deepfacelab-config-and-extension-architecture.md)
+4. [人工质量验收与开发验证标准](implementation/manual-quality-acceptance-and-development-validation-standard.md)
+5. [训练消融实验计划](optimization/training-ablation-experiment-plan.md)
+
+### 3.6 未来 UI 与 Linux 服务化
 
 1. [WSL2 后端与宿主机 UI 设计](design/dfl-wsl2-host-ui-design.md)
 
-该设计当前保留，但暂不进入主要开发阶段。
+该方向保留，但在核心训练与 Merge 增强完成前不进入主要开发阶段。
 
 ---
 
-## 3. 当前已有文档
+## 4. 文档目录说明
 
-### 3.1 Analysis：现状与代码基线
+### analysis/
 
-| 文档 | 作用 | 当前状态 |
-|---|---|---|
-| [dfl-current-project-overview.md](analysis/dfl-current-project-overview.md) | 项目定位、模块架构、完整工作流、阶段路线 | v1.1，主总览 |
-| [dfl-tf2-upgrade-analysis.md](analysis/dfl-tf2-upgrade-analysis.md) | TF2.x、CUDA、新 GPU、精度、优化器和数据管线的代码级分析 | v1.1，训练审计输入 |
-| [implementation-status-and-risk-matrix.md](analysis/implementation-status-and-risk-matrix.md) | 功能状态、代码入口、风险、验证方式和优先级 | v1.0，统一状态来源 |
-| [extraction-architecture-analysis.md](analysis/extraction-architecture-analysis.md) | S3FD、FAN、对齐、worker、DFLJPG 和 Faceset 链路 | v1.0，Extract 基线 |
-| [training-architecture-analysis.md](analysis/training-architecture-analysis.md) | SAEHD、Leras、数据、Loss、梯度和优化器训练链路 | v1.1，训练审计输入 |
-| [merging-architecture-analysis.md](analysis/merging-architecture-analysis.md) | Predictor、mask、颜色、融合、多脸和时序链路 | v1.0，Merge 基线 |
+描述当前真实代码、架构、调用链现状和风险，不代表未来方案已经实现。
 
-### 3.2 Design：候选设计与未来方案
+主要文档：
 
-| 文档 | 作用 | 使用原则 |
-|---|---|---|
-| [dfl-training-algorithm-optimizations.md](design/dfl-training-algorithm-optimizations.md) | 梯度检查点、采样、CBAM、FFL、LPIPS 等候选方案 | 进入开发前必须经过正确性和收益评估 |
-| [dfl-tf2-upgrade-advantages-analysis.md](design/dfl-tf2-upgrade-advantages-analysis.md) | TF2 升级价值与预期收益 | 预期收益不能代替 Benchmark |
-| [dfl-wsl2-host-ui-design.md](design/dfl-wsl2-host-ui-design.md) | WSL2/Linux 后端、Windows UI、HTTP/WebSocket 设计 | Phase 3 使用，当前冻结实施 |
+- `dfl-current-project-overview.md`
+- `dfl-tf2-upgrade-analysis.md`
+- `implementation-status-and-risk-matrix.md`
+- `extraction-architecture-analysis.md`
+- `training-architecture-analysis.md`
+- `merging-architecture-analysis.md`
+
+### design/
+
+保存早期候选方案、TF2 升级价值和未来 UI / 服务化构想。
+
+主要文档：
+
+- `dfl-training-algorithm-optimizations.md`
+- `dfl-tf2-upgrade-advantages-analysis.md`
+- `dfl-wsl2-host-ui-design.md`
+
+这些内容是设计输入，不自动等于当前实施优先级。
+
+### optimization/
+
+保存训练、脸型、Merge、性能和实验方面的专项优化方案。
+
+主要文档：
+
+- `training-correctness-audit.md`
+- `training-performance-optimization.md`
+- `training-quality-algorithm-roadmap.md`
+- `extraction-optimization.md`
+- `merging-optimization.md`
+- `src-dst-training-quality-optimization-design.md`
+- `src-face-shape-preservation-design.md`
+- `src-face-shape-training-and-shape-aware-merge-design.md`
+- `shape-aware-merge-implementation-design.md`
+- `training-ablation-experiment-plan.md`
+
+### implementation/
+
+保存实际施工入口、代码映射、调用链、配置架构和实施计划。
+
+主要文档：
+
+- `enhanced-dfl-master-implementation-plan.md` —— 唯一总实施入口
+- `deepfacelab-code-modification-map.md`
+- `deepfacelab-source-code-audit.md`
+- `deepfacelab-tf2x-source-tree-analysis.md`
+- `deepfacelab-training-call-chain-analysis.md`
+- `deepfacelab-merger-call-chain-analysis.md`
+- `deepfacelab-config-and-extension-architecture.md`
+- `training-enhancement-implementation-plan.md`
+- `merge-shape-aware-implementation-plan.md`
+- `manual-quality-acceptance-and-development-validation-standard.md`
+
+### validation/
+
+保存固定测试条件、兼容检查和验证记录。
+
+已有 `training-benchmark-specification.md` 可作为人工 A/B 的固定条件参考，但第一阶段不建设自动化视觉评分平台。最终视觉质量由人工验收，自动化仅负责工程正确性、回归和可运行性。
 
 ---
 
-## 4. 下一批计划文档
+## 5. 训练增强与脸型合成如何衔接
 
-### 4.1 Phase 1 收尾
+最初的训练增强不是独立路线，而是 Shape-aware Merge 的前置基础。
 
-| 文件 | 目标 | 状态 |
-|---|---|---|
-| `analysis/configuration-and-compatibility-matrix.md` | Python、TF、CUDA、GPU、模型恢复、导出兼容矩阵 | 待创建，可与验证文档合并 |
-| `analysis/phase1-known-issues.md` | 将代码审计发现整理为可执行问题清单 | 可直接并入训练正确性审计 |
+```text
+训练增强
+├── 数据质量
+├── Sampling
+├── Region / Boundary / Frequency Loss
+├── Identity Appearance
+└── Identity Geometry
+          ↓
+Source Shape Template
+          ↓
+Shape-aware Merge
+├── Hybrid Landmark
+├── Piecewise Affine Warp
+├── Shape-aware Mask
+└── Temporal Stabilization
+```
 
-Phase 1 的主架构文档已经覆盖 Extract、Training 和 Merge，不建议继续无限扩写现状文档。后续以专项审计和验证为主。
-
-### 4.2 Phase 2：训练正确性和性能
-
-| 文件 | 目标 | 优先级 |
-|---|---|---|
-| `optimization/training-correctness-audit.md` | 审计 BF16/FP16、Loss Scaling、Lion、Optimizer state、梯度与恢复 | P0，下一份 |
-| `validation/training-benchmark-specification.md` | 固定数据集、配置、指标和测试流程 | P0 |
-| `optimization/training-performance-optimization.md` | 计算图、显存、数据管线、多 GPU 优化 | P1 |
-| `optimization/training-quality-algorithm-roadmap.md` | 采样、Loss、网络结构、时序一致性实验路线 | P1 |
-| `validation/model-quality-evaluation.md` | 单帧质量、身份、几何、时序稳定性评估 | P1 |
-| `validation/compatibility-test-matrix.md` | 模型保存、恢复、旧模型和导出回归测试 | P1 |
-
-### 4.3 Phase 2：Extract、Faceset 和 Merge
-
-| 文件 | 目标 | 状态 |
-|---|---|---|
-| `optimization/extraction-optimization.md` | 检测、Landmark、批处理和流水线优化 | 待训练链路稳定后创建 |
-| `optimization/faceset-intelligence-design.md` | 去重、清晰度、姿态、遮挡、身份和采样分析 | 待创建 |
-| `validation/extraction-benchmark-specification.md` | 固定 Extract 数据集、速度和质量指标 | 待创建 |
-| `optimization/merging-optimization.md` | Batch 推理、GPU 后处理、时序平滑和编码流水线 | 待创建 |
-| `validation/video-temporal-quality-evaluation.md` | 闪烁、颜色跳变、mask 和 Landmark 稳定性 | 待创建 |
-
-### 4.4 Phase 3：Linux 服务化和 UI
-
-| 文件 | 目标 | 状态 |
-|---|---|---|
-| `future/dfl-linux-service-architecture.md` | 将 DFL 核心能力改造成结构化服务 | 暂不启动 |
-| `future/dfl-ui-product-design.md` | 工作区、任务、训练监控、预览和参数管理 | 暂不启动 |
-| `future/dfl-engine-api-contract.md` | TrainingConfig、ExtractConfig、MergeConfig 和事件协议 | Phase 2 后期准备 |
+训练侧负责“学到 src 身份与几何”，Merge 侧负责“最终画面不再被 dst 几何完全覆盖”。只完成其中一侧，都不能完整解决脸型保持问题。
 
 ---
 
-## 5. 文档状态定义
+## 6. 当前开发优先级
 
-为了避免“写进设计文档”被误认为“已经实现”，项目统一使用以下状态：
+### P0：立即处理
+
+1. 修复 Eyes / Mouth Priority 实际传入空 mask 的正确性问题。
+2. 审计低精度、Loss Scaling、梯度 dtype、Optimizer state 和恢复逻辑。
+3. 建立 Feature Flag、配置读取与旧流程回归。
+4. 补充启动、训练、保存恢复和 Merge smoke test。
+
+### P1：训练增强 MVP
+
+1. metadata schema。
+2. quality / pose / shape-aware sampling。
+3. loss hook。
+4. Identity Appearance 与 Identity Geometry 实验入口。
+5. curriculum 基础阶段控制。
+
+### P2：Shape-aware Merge MVP
+
+1. Source Shape Template sidecar。
+2. Hybrid Landmark。
+3. Piecewise Affine Warp。
+4. Shape-aware Soft Mask。
+5. 基础时序平滑与失败回退。
+
+### P3：联调与人工验收
+
+1. 固定素材 A/B。
+2. 身份、脸型、表情、边界和时序人工判断。
+3. 修订默认参数。
+4. 更新兼容说明和实施状态。
+
+### 暂缓
+
+- 替换 SAEHD；
+- Diffusion / Transformer；
+- TPS 作为默认大形变方案；
+- 自动化视觉质量评分系统；
+- 完整 Linux 服务化与 Web UI。
+
+---
+
+## 7. 文档状态定义
 
 | 状态 | 定义 |
 |---|---|
+| 设计阶段 | 仅有方案，尚无代码 |
+| 代码骨架 | 已有类、函数或配置入口，但未进入主流程 |
 | 已实现 | 存在实际代码 |
-| 已接通 | 已进入主运行链路，可被参数或流程调用 |
-| 已验证 | 有自动测试、Benchmark 或固定样例验证结果 |
-| 待验证 | 代码存在，但正确性或收益尚未证明 |
-| 存在问题 | 已确认实现与目标、算法或数值逻辑不一致 |
-| 代码骨架 | 有类、函数或配置入口，但主流程未使用 |
-| 设计阶段 | 仅存在设计说明，尚未开发 |
-| 建议重构 | 当前实现技术债较大，不适合继续叠加功能 |
+| 已接通 | 已进入主运行链路，可由参数调用 |
+| 待验证 | 代码存在，但正确性或收益未确认 |
+| 已验证 | 已通过工程检查或固定样例验证 |
+| 存在问题 | 已确认当前实现与目标不一致 |
+| 建议重构 | 技术债较大，不宜继续直接叠加 |
 
-所有分析文档应尽量同时标明：
+任一任务标记完成至少应满足：
 
 ```text
-功能状态 + 代码入口 + 已知风险 + 验证方法 + 后续动作
+代码存在
++
+进入主链路
++
+默认兼容
++
+基本运行验证通过
++
+失败可回退
++
+文档状态已更新
 ```
+
+视觉算法任务还需要产出可供人工 A/B 判断的结果，但不要求 Agent 自动作出最终审美结论。
 
 ---
 
-## 6. 当前阶段进度
+## 8. 文档维护规则
 
-### Phase 1：项目现状与 TF2.x 升级分析
-
-```text
-状态：主体完成，进入收尾
-项目总览：已完成 v1.1
-TF2.x 实现分析：已完成 v1.1
-训练架构分析：已完成 v1.1
-Extract 架构分析：已完成 v1.0
-Merge 架构分析：已完成 v1.0
-实现状态与风险矩阵：已完成 v1.0
-兼容性矩阵：尚未建立
-建议完成度：约 75%
-```
-
-### Phase 2：核心引擎优化
-
-```text
-状态：准备完成，即将正式启动
-训练架构和风险基线：已建立
-训练正确性审计：下一份文档
-Benchmark：尚未建立
-性能和质量优化：尚未进入开发验证
-```
-
-### Phase 3：Linux 与 UI
-
-```text
-状态：设计保留，实施冻结
-启动条件：训练、Extract、Merge 核心链路稳定并通过验证
-```
-
----
-
-## 7. 当前最高优先级
-
-当前不应优先增加更多界面或外围功能。推荐顺序：
-
-1. 创建并完成 `training-correctness-audit.md`。
-2. 修正 BF16、Loss Scaling、Lion、Optimizer state、低精度梯度等 P0 风险。
-3. 建立统一训练 Benchmark。
-4. 开始训练吞吐、显存和数据管线优化。
-5. 再进行采样、Loss 和网络结构实验。
-6. 训练稳定后进入 Extract/Faceset 和 Merge 专项优化。
-7. 最后进行 Linux 服务化和 UI 联通。
-
----
-
-## 8. 文档维护约定
-
-- `analysis/`：描述当前真实代码，不写未经验证的收益结论。
-- `design/`：描述候选方案，必须标记前提、风险和验证方法。
-- `optimization/`：描述准备开发或正在开发的优化方案。
-- `validation/`：保存测试规范、指标定义和验证结论。
-- `future/`：保存尚未进入实施阶段的服务化和 UI 方案。
-- 重大代码改造前，先更新对应设计和验证文档。
-- 功能完成后，将状态从“设计阶段/待验证”更新为“已实现/已验证”。
+1. 总体实施顺序只维护在 `implementation/enhanced-dfl-master-implementation-plan.md`。
+2. `docs/README.md` 只负责索引、当前优先级和导航。
+3. 当前代码事实写入 `analysis/`。
+4. 算法与优化细节写入 `optimization/`。
+5. 实际任务、文件和调用链写入 `implementation/`。
+6. 固定测试条件与结果写入 `validation/`。
+7. 每完成一个开发批次，同步更新总实施计划、索引和状态矩阵。
+8. 不再创建第二份并行的“总路线”文档，避免实施顺序分裂。

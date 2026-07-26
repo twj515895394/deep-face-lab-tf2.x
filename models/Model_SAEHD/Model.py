@@ -15,6 +15,13 @@ from models import ModelBase
 from samplelib import *
 
 try:
+    from core.enhancements import normalize_enhancement_config
+    ENHANCEMENTS_AVAILABLE = True
+except ImportError:
+    normalize_enhancement_config = None
+    ENHANCEMENTS_AVAILABLE = False
+
+try:
     from core.leras.optimizations import (
         MixedPrecisionManager,
         set_mixed_precision
@@ -22,6 +29,17 @@ try:
     OPTIMIZATIONS_AVAILABLE = True
 except ImportError:
     OPTIMIZATIONS_AVAILABLE = False
+
+try:
+    from core.leras.precision_contract import (
+        resolve_precision_contract,
+        summarize_precision_contract,
+    )
+    PRECISION_CONTRACT_AVAILABLE = True
+except ImportError:
+    resolve_precision_contract = None
+    summarize_precision_contract = None
+    PRECISION_CONTRACT_AVAILABLE = False
 
 # 这些 helper 故意保持纯 NumPy：macOS 无 GPU 时也能验证样本协议，
 # 避免再次把 priority loss 配置错误静默伪装成正常训练。
@@ -98,6 +116,9 @@ def _get_training_iter(model):
         return '<unavailable>'
 
 def _get_training_precision(model):
+    contract = getattr(model, 'precision_contract', None)
+    if isinstance(contract, dict) and contract.get('effective_precision'):
+        return contract.get('effective_precision')
     options = getattr(model, 'options', None)
     if isinstance(options, dict):
         return options.get('precision')
@@ -209,6 +230,13 @@ class SAEHDModel(ModelBase):
         default_clipgrad           = self.options['clipgrad']           = self.load_or_def_option('clipgrad', False)
         default_pretrain           = self.options['pretrain']           = self.load_or_def_option('pretrain', False)
         default_precision          = self.options['precision']         = self.load_or_def_option('precision', 'fp32')
+
+        if ENHANCEMENTS_AVAILABLE:
+            # 新增强配置必须 legacy-safe：旧模型无字段时只构造运行时对象，不强制改写 data.dat。
+            raw_enhancements = self.options.get('enhancements', None)
+            self.enhancements = normalize_enhancement_config(raw_enhancements)
+            if self.is_first_run() or raw_enhancements is not None:
+                self.options['enhancements'] = self.enhancements.to_dict()
 
         ask_override = self.ask_override()
         if self.is_first_run() or ask_override:
@@ -398,31 +426,71 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
         else:
             io.log_info("Optimizer states: GPU (fastest updates)")
 
-        precision = self.options.get('precision', 'fp32')
+        requested_precision = self.options.get('precision', 'fp32')
+        precision = requested_precision
+        self.precision_contract = None
         use_fp16 = False
         self.loss_scale_var = None
+
+        if PRECISION_CONTRACT_AVAILABLE:
+            try:
+                # 这里不做真实 runtime 探测，避免初始化阶段因缺少可选依赖影响旧模型。
+                # BF16/FP16 是否能建图仍由下面 legacy 分支实际尝试后决定。
+                self.precision_contract = resolve_precision_contract(
+                    requested_precision,
+                    runtime_capabilities={
+                        'tensorflow_available': True,
+                        'float16_dtype_available': True,
+                        'bfloat16_dtype_available': True,
+                    },
+                )
+                precision = self.precision_contract.get('effective_precision', 'fp32')
+                io.log_info(summarize_precision_contract(self.precision_contract))
+                if self.precision_contract.get('status') == 'experimental':
+                    io.log_info(f"  Precision status=experimental: {self.precision_contract.get('risk_notes')}")
+                if self.precision_contract.get('fallback_reason'):
+                    io.log_info(f"  Precision fallback: {self.precision_contract.get('fallback_reason')}")
+            except Exception as e:
+                io.log_info(f"Precision contract unavailable, falling back to fp32: {e}")
+                precision = 'fp32'
+
         if precision == 'fp16':
             use_fp16 = True
-            io.log_info("Precision: fp16 (fast, may be unstable)")
+            io.log_info("Precision effective: fp16 (experimental; may be unstable)")
         elif precision == 'bf16':
             try:
                 from tensorflow.keras import mixed_precision as mp
                 mp.set_global_policy(mp.Policy('mixed_bfloat16'))
-                # 调试：打印当前混合精度策略
                 current_policy = mp.global_policy()
-                io.log_info(f"Precision: bf16 mixed (RTX 50 optimized, fast + stable)")
+                io.log_info("Precision effective: bf16 (experimental)")
                 io.log_info(f"  Current mixed precision policy: {current_policy.name}")
                 io.log_info(f"  Variable dtype: {current_policy.variable_dtype}")
                 io.log_info(f"  Compute dtype: {current_policy.compute_dtype}")
                 with tf.device('/CPU:0'):
                     self.loss_scale_var = tf.Variable(32768.0, dtype=tf.float32, name='loss_scale', trainable=False)
-                    nn.tf_sess.run(self.loss_scale_var.initializer)  # ✅ 立即初始化！
-                io.log_info("  Loss Scaling: ENABLED (initial=32768, prevents bf16 gradient underflow)")
+                    nn.tf_sess.run(self.loss_scale_var.initializer)
+                io.log_info("  Loss Scaling: legacy static initial=32768 (still experimental)")
             except Exception as e:
                 io.log_info(f"bf16 not available, falling back to fp32: {e}")
+                precision = 'fp32'
+                use_fp16 = False
+                if PRECISION_CONTRACT_AVAILABLE:
+                    try:
+                        self.precision_contract = resolve_precision_contract(
+                            requested_precision,
+                            runtime_capabilities={
+                                'tensorflow_available': True,
+                                'float16_dtype_available': True,
+                                'bfloat16_dtype_available': False,
+                            },
+                        )
+                        self.precision_contract['fallback_reason'] = f"bf16_init_failed:{e}"
+                        io.log_info(summarize_precision_contract(self.precision_contract))
+                    except Exception:
+                        pass
         else:
-            io.log_info("Precision: fp32 (most stable)")
-            # 调试：打印当前混合精度策略
+            precision = 'fp32'
+            io.log_info("Precision effective: fp32 (validated baseline)")
             try:
                 from tensorflow.keras import mixed_precision as mp
                 current_policy = mp.global_policy()
@@ -431,6 +499,9 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
                 io.log_info(f"  Compute dtype: {current_policy.compute_dtype}")
             except Exception as e:
                 pass
+
+        self.options['precision'] = precision
+        self.precision = precision
 
         # Loss Scale management state (for bf16 training stability)
         self._loss_scale_steps_since_last_adjustment = 0

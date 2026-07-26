@@ -62,9 +62,9 @@ CURRENT_DTYPE_CONTRACT = {
         "placeholder_dtype": "bfloat16",
         "save_file_dtype": "float32",
         "load_variable_dtype": "bfloat16",
-        "loss_scale_mode": "legacy_static",
+        "loss_scale_mode": "legacy_static_experimental",
         "loss_scale_value": 32768.0,
-        "risk_notes": "BF16 remains experimental until dtype, finite, roundtrip, and Windows GPU evidence is complete.",
+        "risk_notes": "BF16 keeps the existing legacy static scale path; Windows GPU evidence is required before changing or validating it.",
     },
 }
 

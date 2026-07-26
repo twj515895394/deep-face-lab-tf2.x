@@ -63,6 +63,7 @@ class Batch1PrecisionContractTest(unittest.TestCase):
         self.assertEqual("missing_dynamic_loss_scale", fp16["loss_scale_mode"])
         self.assertEqual(self.pc.STATUS_EXPERIMENTAL, bf16["status"])
         self.assertEqual("bfloat16", bf16["gradient_dtype"])
+        self.assertEqual("legacy_static_experimental", bf16["loss_scale_mode"])
         self.assertEqual(32768.0, bf16["loss_scale_value"])
 
     def test_invalid_precision_falls_back_to_fp32(self):

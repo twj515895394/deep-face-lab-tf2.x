@@ -97,6 +97,50 @@ def _add_eyes_mouth_masks_to_feed(feed_dict,
     )
     return feed_dict
 
+def _as_training_bool(value, default=True):
+    if value is None:
+        return default
+    try:
+        return bool(np.all(value))
+    except Exception:
+        return default
+
+def _unpack_unified_train_result(result):
+    src_loss, dst_loss = result[0], result[1]
+    gradients_finite = _as_training_bool(result[2], default=True) if len(result) > 2 else True
+    step_applied = _as_training_bool(result[3], default=gradients_finite) if len(result) > 3 else gradients_finite
+    return src_loss, dst_loss, gradients_finite, step_applied
+
+def _update_loss_scale_state(model, gradients_finite):
+    if model.loss_scale_var is None:
+        return
+    log_info = getattr(io, 'log_info', None)
+    if not gradients_finite:
+        current_scale = nn.tf_sess.run(model.loss_scale_var)
+        new_scale = max(current_scale / 2.0, 1.0)
+        nn.tf_sess.run(model.loss_scale_var.assign(new_scale))
+        if log_info is not None:
+            log_info(f"⚠️ Loss scale reduced: {current_scale:.0f} → {new_scale:.0f} (non-finite gradient detected)")
+        model._loss_scale_consecutive_normal_steps = 0
+        model._loss_scale_steps_since_last_adjustment = 0
+        return
+
+    model._loss_scale_consecutive_normal_steps += 1
+    model._loss_scale_steps_since_last_adjustment += 1
+
+    if model._loss_scale_consecutive_normal_steps >= model._LOSS_SCALE_RECOVERY_INTERVAL:
+        current_scale = nn.tf_sess.run(model.loss_scale_var)
+        if current_scale < model._LOSS_SCALE_MAX:
+            new_scale = min(current_scale * 2.0, model._LOSS_SCALE_MAX)
+            nn.tf_sess.run(model.loss_scale_var.assign(new_scale))
+            if log_info is not None:
+                log_info(
+                    f"✓ Loss scale increased: {current_scale:.0f} → "
+                    f"{new_scale:.0f} (stable for "
+                    f"{model._loss_scale_consecutive_normal_steps} steps)"
+                )
+        model._loss_scale_consecutive_normal_steps = 0
+
 def _get_training_batch_size(model):
     get_batch_size = getattr(model, 'get_batch_size', None)
     if get_batch_size is None:
@@ -938,29 +982,64 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
                 src_loss = tf.concat(gpu_src_losses, 0)
                 dst_loss = tf.concat(gpu_dst_losses, 0)
 
-                def _get_scaled_update_op(optimizer, gv_list):
+                def _prepare_gv_for_finite_gate(gv_list):
                     if self.loss_scale_var is None:
-                        return optimizer.get_update_op(gv_list)
-                    unscaled_gv = [
-                        (g / tf.cast(self.loss_scale_var, g.dtype), v)
-                        for g, v in gv_list
+                        unscaled_gv = gv_list
+                    else:
+                        unscaled_gv = [
+                            (g / tf.cast(self.loss_scale_var, g.dtype), v)
+                            for g, v in gv_list
+                        ]
+                    is_finite = getattr(tf, 'is_finite', None)
+                    if is_finite is None:
+                        is_finite = tf.math.is_finite
+                    finite_checks = [
+                        tf.reduce_all(is_finite(g))
+                        for g, v in unscaled_gv
                     ]
-                    return optimizer.get_update_op(unscaled_gv)
+                    return unscaled_gv, tf.reduce_all(tf.stack(finite_checks))
 
-                src_dst_loss_gv_op = _get_scaled_update_op(self.src_dst_opt, nn.average_gv_list(gpu_G_loss_gvs))
+                def _get_gated_update_op(optimizer, gv_list, all_gradients_finite):
+                    # 先在图里判断所有 unscaled gradients，避免坏 step 先污染参数再被 Python 端发现。
+                    def _apply_update():
+                        update_op = optimizer.get_update_op(gv_list)
+                        with tf.control_dependencies([update_op]):
+                            return tf.constant(True, dtype=tf.bool, name=optimizer.name + '_step_applied')
+
+                    def _skip_update():
+                        return tf.constant(False, dtype=tf.bool, name=optimizer.name + '_skip_nonfinite_gradients')
+
+                    return tf.cond(all_gradients_finite, _apply_update, _skip_update)
+
+                src_dst_gv, src_dst_gradients_finite = _prepare_gv_for_finite_gate(
+                    nn.average_gv_list(gpu_G_loss_gvs)
+                )
+                finite_flags = [src_dst_gradients_finite]
+                optimizer_update_specs = [(self.src_dst_opt, src_dst_gv)]
 
                 if self.options['true_face_power'] != 0:
-                    D_loss_gv_op = _get_scaled_update_op(self.D_code_opt, nn.average_gv_list(gpu_D_code_loss_gvs))
+                    D_code_gv, D_code_gradients_finite = _prepare_gv_for_finite_gate(
+                        nn.average_gv_list(gpu_D_code_loss_gvs)
+                    )
+                    finite_flags.append(D_code_gradients_finite)
+                    optimizer_update_specs.append((self.D_code_opt, D_code_gv))
 
                 if gan_power != 0:
-                    src_D_src_dst_loss_gv_op = _get_scaled_update_op(self.D_src_dst_opt, nn.average_gv_list(gpu_D_src_dst_loss_gvs))
+                    D_src_dst_gv, D_src_dst_gradients_finite = _prepare_gv_for_finite_gate(
+                        nn.average_gv_list(gpu_D_src_dst_loss_gvs)
+                    )
+                    finite_flags.append(D_src_dst_gradients_finite)
+                    optimizer_update_specs.append((self.D_src_dst_opt, D_src_dst_gv))
+
+                all_gradients_finite = tf.reduce_all(tf.stack(finite_flags))
+                optimizer_update_ops = [
+                    _get_gated_update_op(optimizer, gv_list, all_gradients_finite)
+                    for optimizer, gv_list in optimizer_update_specs
+                ]
+                step_applied = tf.reduce_all(tf.stack(optimizer_update_ops))
 
             # Unified training function (only one used)
-            _unified_ops = [src_loss, dst_loss, src_dst_loss_gv_op]
-            if self.options['true_face_power'] != 0:
-                _unified_ops.append(D_loss_gv_op)
-            if gan_power != 0:
-                _unified_ops.append(src_D_src_dst_loss_gv_op)
+            _unified_ops = [src_loss, dst_loss, all_gradients_finite, step_applied]
 
             def unified_train(warped_src, target_src, target_srcm,
                                warped_dst, target_dst, target_dstm,
@@ -977,7 +1056,7 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
                     self._has_eyes_mouth,
                 )
                 results = nn.tf_sess.run(_unified_ops, feed_dict=fd)
-                return results[0], results[1]
+                return results[0], results[1], results[2], results[3]
             self.unified_train = unified_train
 
 
@@ -1173,47 +1252,19 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
                 dst_samples, self._has_eyes_mouth, 'dst'
             )
 
-            src_loss, dst_loss = self.unified_train(warped_src, target_src, target_srcm,
-                                                      warped_dst, target_dst, target_dstm,
-                                                      target_srcm_em=target_srcm_em,
-                                                      target_dstm_em=target_dstm_em)
+            train_result = self.unified_train(warped_src, target_src, target_srcm,
+                                              warped_dst, target_dst, target_dstm,
+                                              target_srcm_em=target_srcm_em,
+                                              target_dstm_em=target_dstm_em)
+            src_loss, dst_loss, gradients_finite, step_applied = _unpack_unified_train_result(train_result)
 
             iter_time_ms = (time.time() - iter_start_time) * 1000
 
-            if self.loss_scale_var is not None:
-                has_inf_nan = (not np.all(np.isfinite(src_loss)) or
-                               not np.all(np.isfinite(dst_loss)))
-
-                if has_inf_nan:
-                    # Reduce loss scale on inf/nan detection
-                    current_scale = nn.tf_sess.run(self.loss_scale_var)
-                    new_scale = max(current_scale / 2.0, 1.0)
-                    nn.tf_sess.run(self.loss_scale_var.assign(new_scale))
-                    io.log_info(f"⚠️ Loss scale reduced: {current_scale:.0f} → {new_scale:.0f} (inf/nan detected)")
-                    # Reset recovery counters
-                    self._loss_scale_consecutive_normal_steps = 0
-                    self._loss_scale_steps_since_last_adjustment = 0
-                    return (('src_loss', 0.0), ('dst_loss', 0.0))
-                else:
-                    # Normal step: track for potential recovery
-                    self._loss_scale_consecutive_normal_steps += 1
-                    self._loss_scale_steps_since_last_adjustment += 1
-
-                    # Attempt to increase loss scale after stable period
-                    if (self._loss_scale_consecutive_normal_steps >=
-                        self._LOSS_SCALE_RECOVERY_INTERVAL):
-                        current_scale = nn.tf_sess.run(self.loss_scale_var)
-
-                        # Only increase if below maximum and not at initial value
-                        if current_scale < self._LOSS_SCALE_MAX:
-                            new_scale = min(current_scale * 2.0, self._LOSS_SCALE_MAX)
-                            nn.tf_sess.run(self.loss_scale_var.assign(new_scale))
-                            io.log_info(f"✓ Loss scale increased: {current_scale:.0f} → "
-                                       f"{new_scale:.0f} (stable for "
-                                       f"{self._loss_scale_consecutive_normal_steps} steps)")
-
-                        # Reset counter after adjustment attempt
-                        self._loss_scale_consecutive_normal_steps = 0
+            _update_loss_scale_state(self, gradients_finite)
+            if not step_applied:
+                if self.loss_scale_var is None:
+                    io.log_info("⚠️ Optimizer step skipped: non-finite gradient detected")
+                return (('src_loss', 0.0), ('dst_loss', 0.0))
 
         except Exception as e:
             # 训练异常必须保留原始失败语义，避免后续返回路径掩盖根因。

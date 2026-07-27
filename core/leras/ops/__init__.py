@@ -1,33 +1,124 @@
+import time
 import numpy as np
 from core.leras import nn
 tf = nn.tf
 from tensorflow.python.ops import array_ops, random_ops, math_ops, sparse_ops, gradients
 from tensorflow.python.framework import sparse_tensor
+from core.interact import interact as io
 
 def tf_get_value(tensor):
     return nn.tf_sess.run (tensor)
 nn.tf_get_value = tf_get_value
 
 
-def batch_set_value(tuples):
-    if len(tuples) != 0:
+_CHUNK_SIZE = 64 * 1024 * 1024  # 64 MiB per TF session to avoid GPU staging OOM
+
+
+def batch_set_value(tuples, log_label=None, chunk_size=_CHUNK_SIZE):
+    if len(tuples) == 0:
+        return
+
+    t_global = time.monotonic() if log_label else 0
+    _total_count = len(tuples)
+
+    if log_label:
+        _total_bytes = sum(
+            v.nbytes for _, v in tuples if hasattr(v, 'nbytes')
+        )
+
+    # Split into chunks
+    chunks = []
+    cur_chunk, cur_bytes = [], 0
+    for t in tuples:
+        v_bytes = t[1].nbytes if hasattr(t[1], 'nbytes') else 0
+        if cur_chunk and cur_bytes + v_bytes > chunk_size and v_bytes < chunk_size:
+            chunks.append(cur_chunk)
+            cur_chunk, cur_bytes = [], 0
+        cur_chunk.append(t)
+        cur_bytes += v_bytes
+    if cur_chunk:
+        chunks.append(cur_chunk)
+
+    if log_label:
+        io.log_info(f"{log_label}...")
+        io.log_info(f"    Total: {_total_count} vars, {_fmt_size(_total_bytes)}")
+        io.log_info(f"    Chunks: {len(chunks)} (max {_fmt_size(chunk_size)}/chunk)")
+
+    for ci, chunk in enumerate(chunks):
         with nn.tf.device('/CPU:0'):
             assign_ops = []
             feed_dict = {}
+            chunk_bytes = 0
 
-            for x, value in tuples:
+            for x, value in chunk:
                 if isinstance(value, nn.tf.Operation) or \
                     isinstance(value, nn.tf.Variable):
                     assign_ops.append(value)
                 else:
                     value = np.asarray(value, dtype=x.dtype.as_numpy_dtype)
-                    assign_placeholder = nn.tf.placeholder( x.dtype.base_dtype, shape=[None]*value.ndim )
-                    assign_op = nn.tf.assign (x, assign_placeholder )
+                    assign_placeholder = nn.tf.placeholder(
+                        x.dtype.base_dtype, shape=[None]*value.ndim)
+                    assign_op = nn.tf.assign(x, assign_placeholder)
                     assign_ops.append(assign_op)
                     feed_dict[assign_placeholder] = value
+                    chunk_bytes += value.nbytes
+
+            if log_label:
+                t0 = time.monotonic()
+                io.log_info(
+                    f"    Batch {ci+1}/{len(chunks)}: "
+                    f"{_fmt_size(chunk_bytes)}, {len(assign_ops)} vars"
+                )
 
             nn.tf_sess.run(assign_ops, feed_dict=feed_dict)
+
+            if log_label:
+                t1 = time.monotonic()
+                io.log_info(
+                    f"    Batch {ci+1}/{len(chunks)} done: "
+                    f"{_fmt_duration(t1 - t0)}"
+                )
+
+    if log_label:
+        io.log_info(
+            f"    All batches: {_fmt_duration(time.monotonic() - t_global)}"
+        )
 nn.batch_set_value = batch_set_value
+
+
+def _fmt_size(n):
+    if n >= 1024 * 1024 * 1024:
+        return f"{n / (1024 * 1024 * 1024):.2f} GiB"
+    elif n >= 1024 * 1024:
+        return f"{n / (1024 * 1024):.2f} MiB"
+    elif n >= 1024:
+        return f"{n / 1024:.2f} KiB"
+    return f"{n} B"
+
+
+def _fmt_duration(seconds):
+    if seconds >= 60:
+        return f"{seconds:.1f}s ({seconds/60:.1f}m)"
+    elif seconds >= 1:
+        return f"{seconds:.2f}s"
+    else:
+        return f"{seconds*1000:.0f}ms"
+
+
+def _get_rss():
+    try:
+        with open('/proc/self/status') as f:
+            for line in f:
+                if line.startswith('VmRSS:'):
+                    kb = int(line.split()[1])
+                    if kb >= 1024 * 1024:
+                        return f"{kb / (1024 * 1024):.2f} GiB"
+                    elif kb >= 1024:
+                        return f"{kb / 1024:.2f} MiB"
+                    return f"{kb} KiB"
+    except Exception:
+        return "N/A"
+    return "N/A"
 
 def init_weights(weights):
     ops = []

@@ -5,7 +5,7 @@
 > 仓库：`twj515895394/deep-face-lab-tf2.x`  
 > 设计分支：`codex/batch2-metadata-sampling-design`  
 > 基线提交：`55d4d8a4d29dc0fcc4a571d2c4f24dcdb2b7069e`  
-> 本次定位：完成 Batch 2 的源码复核、产品边界、文件/函数级详细设计和 `.scratch` ticket 拆分；尚未开始运行时代码实现。
+> 本次定位：完成 Batch 2 的源码复核、产品边界、文件/函数级详细设计、`.scratch` ticket 拆分和弱模型可执行性增强；尚未开始运行时代码实现。
 
 ---
 
@@ -26,7 +26,8 @@ Batch 2：训练数据增强
 - 训练主线固定 FP32 + AdaBelief；
 - 不把动态 Loss sampler、脸型训练、Lion 或低精度混入 Batch 2；
 - ordinary / Packed Faceset 均可使用；
-- 所有增强默认关闭，失败可回退 legacy。
+- 所有增强默认关闭，失败可回退 legacy；
+- Ticket 能由能力偏弱的编码模型按步骤执行，不能只给抽象目标。
 
 ---
 
@@ -60,6 +61,7 @@ docs/development/batch2-training-data-and-sampling-tasks.md
 
 ```text
 .scratch/batch2-training-data-and-sampling/
+├── AGENT_IMPLEMENTATION_GUIDE.md
 ├── spec.md
 ├── issues/
 │   ├── 01-baseline-and-fixtures.md
@@ -78,7 +80,42 @@ docs/development/batch2-training-data-and-sampling-tasks.md
     └── README.md
 ```
 
-### 2.3 设计引用的核心文档
+### 2.3 Ticket 弱模型可执行性增强
+
+12 个 Ticket 已逐一补充：
+
+- Agent 开工前必读文档和源码；
+- 当前源码事实复核项；
+- 建议对象、接口和数据结构骨架；
+- 分步骤施工顺序；
+- 退化、fallback 和错误边界；
+- 可执行测试命令；
+- 禁止捷径与常见错误；
+- summary 中交给下一 Ticket 的稳定接口。
+
+统一新增：
+
+```text
+.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md
+```
+
+该文件规定：
+
+```text
+先读 handoff/spec/design/guide/前置 summary
+→ 复核真实源码
+→ 先冻结测试或失败证据
+→ 建最小接口
+→ 小步实现
+→ 回归 legacy
+→ 生成 summary
+```
+
+能力偏弱的模型不得只收到单个 Ticket 标题和 checklist；至少要同时提供当前 Ticket、统一 guide、前置 summary 和相关源码。
+
+其中 Ticket 09、10 属于高风险任务，明确要求先完成纯函数/基础设施验证，再接入 Generator/SAEHD；不能直接修改训练主链路。
+
+### 2.4 设计引用的核心文档
 
 - Batch 1 详细设计；
 - Enhanced DFL 总实施计划；
@@ -89,7 +126,7 @@ docs/development/batch2-training-data-and-sampling-tasks.md
 - Code Modification Map；
 - Manual Quality Acceptance Standard。
 
-### 2.4 复核的核心源码
+### 2.5 复核的核心源码
 
 - `samplelib/Sample.py`
 - `samplelib/SampleLoader.py`
@@ -201,12 +238,14 @@ Region / Boundary / Frequency / Identity Loss：Batch 3+
 ```text
 Batch 2 正式详细设计：已完成
 Batch 2 .scratch ticket 拆分：已完成
+Batch 2 弱模型执行规范：已完成
+Ticket 01-12 引导性补强：已完成
 Batch 2 运行时代码：未开始
 Batch 2 自动测试：未开始
 Batch 2 Windows FP32 验收：未开始
 ```
 
-本次只新增设计、执行包和交接，不修改运行时代码。
+本次只新增设计、执行规范、ticket 和交接，不修改运行时代码。
 
 ---
 
@@ -216,6 +255,12 @@ Batch 2 Windows FP32 验收：未开始
 
 ```text
 .scratch/batch2-training-data-and-sampling/issues/01-baseline-and-fixtures.md
+```
+
+执行模型同时必须读取：
+
+```text
+.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md
 ```
 
 然后严格按依赖推进：
@@ -234,7 +279,7 @@ Batch 2 Windows FP32 验收：未开始
 → 12 Docs/Handoff
 ```
 
-不得直接从 Ticket 09 开始修改 Generator。
+不得直接从 Ticket 09 开始修改 Generator。能力偏弱的模型一次只分配一个 Ticket，并提供前置 summary 和相关源码。
 
 ---
 
@@ -250,6 +295,8 @@ Batch 2 Windows FP32 验收：未开始
 - SAEHD 接入只传 policy，不改 batch tensor contract。
 - 所有新增功能默认关闭。
 - 核心训练异常不能被 optional fallback 吞掉。
+- 每个 Ticket 完成后必须生成 summary，后续 Ticket 只依赖公开接口。
+- 高风险 Ticket 09/10 完成后应由更强模型或人工进行 code review。
 
 ---
 
@@ -257,6 +304,7 @@ Batch 2 Windows FP32 验收：未开始
 
 1. `docs/development/batch2-training-data-and-sampling-tasks.md`
 2. `.scratch/batch2-training-data-and-sampling/spec.md`
-3. `.scratch/batch2-training-data-and-sampling/issues/01-baseline-and-fixtures.md`
-4. `docs/implementation/enhanced-dfl-master-implementation-plan.md`
-5. `docs/implementation/manual-quality-acceptance-and-development-validation-standard.md`
+3. `.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md`
+4. `.scratch/batch2-training-data-and-sampling/issues/01-baseline-and-fixtures.md`
+5. `docs/implementation/enhanced-dfl-master-implementation-plan.md`
+6. `docs/implementation/manual-quality-acceptance-and-development-validation-standard.md`

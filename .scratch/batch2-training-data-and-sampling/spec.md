@@ -25,6 +25,32 @@ Quality + Pose Sampling
 日志、报告和安全回退
 ```
 
+## Agent 执行入口
+
+任何 Agent、Codex、Claude 或能力偏弱的编码模型领取 Ticket 前，必须依次阅读：
+
+1. `.handoff/current.md`
+2. 本 `spec.md`
+3. `docs/development/batch2-training-data-and-sampling-tasks.md`
+4. `.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md`
+5. 当前 Ticket
+6. 当前 Ticket 所有 `Blocked by` 对应 summary
+7. 当前 Ticket “Agent 开工前必读”中列出的源码
+
+不得只把当前 Ticket 标题和 checklist 发送给执行模型。任务上下文至少必须包含：
+
+```text
+当前 Ticket
++
+AGENT_IMPLEMENTATION_GUIDE.md
++
+前置 Ticket summary
++
+相关源码文件
+```
+
+若前置 summary 缺失、接口不一致或当前源码与 Ticket 假设冲突，Agent 必须标记 blocked，不得自行扩大重构范围。
+
 ## 已确定决策
 
 - 正式训练基线固定为 FP32 + AdaBelief。
@@ -59,7 +85,53 @@ Quality + Pose Sampling
 - 修改 `faceset.pak` 格式；
 - 把动态 Loss 状态写入 Metadata；
 - 引入大型外部质量模型；
-- 在同一 ticket 中顺带开发 Batch 3 / 4 / 5 / 6 功能。
+- 在同一 ticket 中顺带开发 Batch 3 / 4 / 5 / 6 功能；
+- 为通过测试吞掉核心训练、SampleProcessor、TensorFlow、save/load 错误；
+- 只做导入或语法检查就把功能标记 resolved。
+
+## Ticket 质量标准
+
+每个 Ticket 已按弱模型执行要求包含：
+
+- 开工前必读文档和源码；
+- 当前源码事实检查；
+- 推荐对象/API 骨架；
+- 分步骤施工顺序；
+- 边界、fallback 和禁止捷径；
+- 可复制或可调整的测试命令；
+- 验收证据和 summary 交接要求。
+
+执行模型必须按 Ticket 顺序完成，不得跳过前置纯函数/基线任务，直接进入高风险运行时改造。
+
+## 通用完成定义
+
+单个 Ticket 只有同时满足以下条件才可从 open 改为 resolved：
+
+```text
+前置依赖已完成
++
+源码事实复核有记录
++
+实现严格在 Ticket 范围内
++
+对应自动测试实际通过
++
+legacy/关闭路径回归有证据
++
+summary 已生成
++
+Windows/GPU 未执行项明确标记
+```
+
+以下不算完成：
+
+- 只创建文件或接口；
+- 只通过 `compileall`；
+- 测试被全部 skip；
+- 只有 synthetic 测试但 Ticket 要求 Windows spawn/GPU；
+- 未生成 summary；
+- 通过 fallback 掩盖核心错误；
+- 文档声称完成但没有 commit、命令或日志依据。
 
 ## 平台验证约定
 
@@ -131,6 +203,8 @@ Quality + Pose Sampling
      12
 ```
 
+禁止跳过 01-08，直接让弱模型修改 Ticket 09/10 的 Generator 或 SAEHD 接线。
+
 ## Issues
 
 - `01-baseline-and-fixtures.md`
@@ -159,14 +233,37 @@ Quality + Pose Sampling
 - 实际修改文件和函数；
 - 新增/修改接口；
 - 参数、默认值和输出字段；
-- 自动测试结果；
+- 自动测试命令与 PASS / SKIP / PENDING / FAIL；
 - 人工验证步骤；
 - 未完成的 Windows / GPU 项；
 - 兼容和回退证据；
-- 风险与下一 ticket 建议。
+- 风险与下一 ticket 建议；
+- 下一 Ticket 可依赖的公共接口；
+- 下一 Ticket 不应依赖的内部实现。
+
+summary 模板以：
+
+```text
+.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md
+```
+
+为准。
+
+## 弱模型执行建议
+
+给能力较弱的模型分配任务时：
+
+- 一次只分配一个 Ticket；
+- 不同时分配并行 Ticket 07 和 08 给同一个弱模型；
+- Ticket 09、10 应要求模型先输出源码事实复核，再允许编码；
+- 要求每完成一个小步骤立即运行对应测试；
+- 不把完整 Batch 2 一次性作为单个 prompt；
+- 使用前置 summary 作为稳定接口，而不是让后续模型重新阅读全部历史提交；
+- 高风险 Ticket 完成后应由更强模型或人工进行 code review。
 
 ## 参考文档
 
+- `.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md`
 - `docs/development/batch2-training-data-and-sampling-tasks.md`
 - `docs/development/batch1-correctness-and-extension-foundation-tasks.md`
 - `docs/implementation/enhanced-dfl-master-implementation-plan.md`

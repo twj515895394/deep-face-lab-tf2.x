@@ -9,7 +9,16 @@ set DST_DIR=/s/v_source/chenxiang/02/data_dst/aligned
 set MODEL_DIR=/h/models2/model-yangzi
 
 set MODEL=SAEHD
-set DISPLAY=host.docker.internal:2
+
+REM ---- Auto-detect VcXsrv display ----
+for /f "tokens=2 delims=:" %%a in ('netstat -ano ^| findstr "LISTENING" ^| findstr "vcxsrv" ^| findstr "0.0.0.0:"') do (
+  set /a DISPLAY_NUM=%%a-6000
+  set DISPLAY=host.docker.internal:!DISPLAY_NUM!
+)
+if not defined DISPLAY (
+  echo [WARNING] VcXsrv not detected, using default :0
+  set DISPLAY=host.docker.internal:0
+)
 
 docker ps --format "{{.Names}}" | findstr /c:"%CONTAINER%" >nul
 if %errorlevel% neq 0 (
@@ -21,9 +30,10 @@ if %errorlevel% neq 0 (
 
 echo ==========================================
 echo   DFL Training
-echo   SRC  : %SRC_DIR%
-echo   DST  : %DST_DIR%
-echo   MODEL: %MODEL_DIR%
+echo   SRC    : %SRC_DIR%
+echo   DST    : %DST_DIR%
+echo   MODEL  : %MODEL_DIR%
+echo   DISPLAY: %DISPLAY%
 echo ==========================================
 echo.
 echo Killing any leftover training processes...

@@ -83,5 +83,15 @@ class TestOptionsJson(unittest.TestCase):
             self.assertFalse(result)
             mock_log.assert_called_with("检测到 GUI 选项 JSON，自动跳过手动参数设置倒计时。")
 
+    def test_save_interval_min_parsing(self):
+        test_json = json.dumps({
+            "save_interval_min": 10
+        })
+        self.model.options_json = test_json
+        with patch('models.ModelBase.io.log_info'):
+            self.model.load_train_step_config()
+
+        self.assertEqual(self.model.options['save_interval_min'], 10)
+
 if __name__ == '__main__':
     unittest.main()

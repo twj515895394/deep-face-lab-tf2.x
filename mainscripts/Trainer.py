@@ -63,6 +63,12 @@ def trainerThread (s2c, c2s, e,
                         options_json=options_json,
                         debug=debug)
 
+            try:
+                save_interval_min = max(1, int(model.options.get('save_interval_min', 25)))
+            except Exception:
+                save_interval_min = 25
+            io.log_info(f"Auto-save interval: {save_interval_min} minutes.")
+
             is_reached_goal = model.is_reached_iter_goal()
 
             shared_state = { 'after_save' : False }

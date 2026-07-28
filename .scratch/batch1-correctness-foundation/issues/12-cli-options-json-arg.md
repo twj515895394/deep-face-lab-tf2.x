@@ -1,17 +1,17 @@
 # 12 — CLI 参数扩展与透传链路
 
-Status: open
+Status: completed
 Type: AFK
 Blocked by: None — 可以立即开始
 
 **构建内容:** 在 `deep-face-lab-tf2.x` 后端的入口与调度主脚本中扩展 `--options-json` 命令行参数支持，并将其一路透传给 Trainer 线程与 ModelBase 构造函数，为 GUI 图形客户端静默透传训练超参数提供 CLI 合约接口。
 
-- [ ] 在 `main.py` 的 `train` 子解析器 (`subparsers.add_parser("train")`) 中添加 `--options-json` 命令行参数定义。
-- [ ] 在 `main.py` 的 `process_train(arguments)` 函数的 `kwargs` 字典中添加 `'options_json': arguments.options_json`。
-- [ ] 在 `mainscripts/Trainer.py` 中修改 `trainerThread` 函数形参签名，增加 `options_json=None` 默认形参。
-- [ ] 在 `mainscripts/Trainer.py` 中修改 `main()` 函数形参签名，支持接收 `options_json` 形参。
-- [ ] 在 `mainscripts/Trainer.py` 中实例化模型 `models.import_model(model_class_name)(...)` 时，将 `options_json=options_json` 显式透传给模型构造函数。
-- [ ] 确保在没有传入 `--options-json` 时，系统维持 `options_json=None` 默认行为，与原有命令行交互 100% 兼容。
+- [x] 在 `main.py` 的 `train` 子解析器 (`subparsers.add_parser("train")`) 中添加 `--options-json` 命令行参数定义。
+- [x] 在 `main.py` 的 `process_train(arguments)` 函数的 `kwargs` 字典中添加 `'options_json': arguments.options_json`。
+- [x] 在 `mainscripts/Trainer.py` 中修改 `trainerThread` 函数形参签名，增加 `options_json=None` 默认形参。
+- [x] 在 `mainscripts/Trainer.py` 中修改 `main()` 函数形参签名，支持接收 `options_json` 形参。
+- [x] 在 `mainscripts/Trainer.py` 中实例化模型 `models.import_model(model_class_name)(...)` 时，将 `options_json=options_json` 显式透传给模型构造函数。
+- [x] 确保在没有传入 `--options-json` 时，系统维持 `options_json=None` 默认行为，与原有命令行交互 100% 兼容。
 
 ## 代码修改详细规格
 
@@ -53,10 +53,10 @@ Blocked by: None — 可以立即开始
 
 ## 完成总结报告
 
-- [ ] 本 issue 涉及 CLI 参数变更，完成后需在 `.scratch/batch1-correctness-foundation/reports/12-cli-options-json-arg-summary.md` 生成 summary 报告。
-- [ ] summary 报告需包含新增/修改接口、输入参数变更、人工验证建议、技术验证结果、风险与注意事项。
-- [ ] 已在本 issue 的 `## Comments` 中追加 summary 报告路径和生成时间。
+- [x] 本 issue 涉及 CLI 参数变更，完成后需在 `.scratch/batch1-correctness-foundation/reports/12-cli-options-json-arg-summary.md` 生成 summary 报告。
+- [x] summary 报告需包含新增/修改接口、输入参数变更、人工验证建议、技术验证结果、风险与注意事项。
+- [x] 已在本 issue 的 `## Comments` 中追加 summary 报告路径和生成时间。
 
 ## Comments
 
-- 待开发人员或 Agent 执行完成后填写执行记录。
+- 2026-07-28 16:21: 已完成 CLI 参数扩展与透传链路，生成总结报告：[12-cli-options-json-arg-summary.md](file:///t:/deep-face-lab-tf2.x/.scratch/batch1-correctness-foundation/reports/12-cli-options-json-arg-summary.md)。

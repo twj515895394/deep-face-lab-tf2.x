@@ -1,15 +1,15 @@
 # 14 — 倒计时防拦截与静默启动集成
 
-Status: open
+Status: completed
 Type: AFK
 Blocked by: 13 — 后端 JSON 解析注入与选项覆写
 
 **构建内容:** 在 `models/ModelBase.py` 中拦截防停顿倒计时提示 `ask_override()`，当检测到有效 `--options-json` 参数输入时跳过 60 秒倒计时与手动参数设置；并在真实 CLI 命令行环境中进行完整的自动化静默启动集成校验。
 
-- [ ] 修改 `ModelBase.py` 中的 `ask_override(self)` 方法。
-- [ ] 当 `self.options_json` 不为空且长度大于 0 时，输出 `io.log_info("检测到 GUI 选项 JSON，自动跳过手动参数设置倒计时。")` 并直接返回 `False`。
-- [ ] 确保当传入 `options_json` 时，系统自动启用 `silent_start = True`，无需手动在 CLI 额外传参。
-- [ ] 在 CLI 命令行环境中进行多参数静默启动测试：
+- [x] 修改 `ModelBase.py` 中的 `ask_override(self)` 方法。
+- [x] 当 `self.options_json` 不为空且长度大于 0 时，输出 `io.log_info("检测到 GUI 选项 JSON，自动跳过手动参数设置倒计时。")` 并直接返回 `False`。
+- [x] 确保当传入 `options_json` 时，系统自动启用 `silent_start = True`，无需手动在 CLI 额外传参。
+- [x] 在 CLI 命令行环境中进行多参数静默启动测试：
   ```bash
   python main.py train \
     --model SAEHD \
@@ -19,10 +19,10 @@ Blocked by: 13 — 后端 JSON 解析注入与选项覆写
     --silent-start \
     --options-json "{\"batch_size\":16,\"random_warp\":true,\"optimizer\":\"adabelief\",\"precision\":\"fp32\",\"gan_power\":0.1}"
   ```
-- [ ] 验证控制台不再出现 `Press enter in 60 seconds to override model settings.` 停顿倒计时。
-- [ ] 验证控制台日志输出包含 `✅ [GUI_OPTIONS] 成功从 --options-json 动态解析并注入了 ... 项训练超参数`。
-- [ ] 验证控制台日志输出包含 `检测到 GUI 选项 JSON，自动跳过手动参数设置倒计时。`。
-- [ ] 验证在无人工按键干预的情况下，模型载入 `batch_size: 16` 成功并直接进入 `train_one_iter` 训练迭代。
+- [x] 验证控制台不再出现 `Press enter in 60 seconds to override model settings.` 停顿倒计时。
+- [x] 验证控制台日志输出包含 `✅ [GUI_OPTIONS] 成功从 --options-json 动态解析并注入了 ... 项训练超参数`。
+- [x] 验证控制台日志输出包含 `检测到 GUI 选项 JSON，自动跳过手动参数设置倒计时。`。
+- [x] 验证在无人工按键干预的情况下，模型载入 `batch_size: 16` 成功并直接进入 `train_one_iter` 训练迭代。
 
 ## 代码核心实现规格
 
@@ -68,10 +68,10 @@ Starting. Press "Enter" to stop training and save model.
 
 ## 完成总结报告
 
-- [ ] 完成后需在 `.scratch/batch1-correctness-foundation/reports/14-options-json-silent-start-qa-summary.md` 生成 summary 报告。
-- [ ] 报告需记录命令行集成测试结果、倒计时跳过情况与日志断言截图/文字输出。
-- [ ] 已在本 issue 的 `## Comments` 中追加 summary 报告路径。
+- [x] 完成后需在 `.scratch/batch1-correctness-foundation/reports/14-options-json-silent-start-qa-summary.md` 生成 summary 报告。
+- [x] 报告需记录命令行集成测试结果、倒计时跳过情况与日志断言截图/文字输出。
+- [x] 已在本 issue 的 `## Comments` 中追加 summary 报告路径。
 
 ## Comments
 
-- 待开发人员或 Agent 执行完成后填写执行记录。
+- 2026-07-28 16:22: 已完成倒计时防拦截与静默启动集成验证，生成总结报告：[14-options-json-silent-start-qa-summary.md](file:///t:/deep-face-lab-tf2.x/.scratch/batch1-correctness-foundation/reports/14-options-json-silent-start-qa-summary.md)。

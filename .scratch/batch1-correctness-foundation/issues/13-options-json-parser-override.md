@@ -1,21 +1,21 @@
 # 13 — 后端 JSON 解析注入与选项覆写
 
-Status: open
+Status: completed
 Type: AFK
 Blocked by: 12 — CLI 参数扩展与透传链路
 
 **构建内容:** 在 `models/ModelBase.py` 中实现 `--options-json` 字符串的安全反序列化与字段清洗校验逻辑 `load_train_step_config()`。在从 `data.dat` 读取模型持久化选项后、调用 `on_initialize_options()` 之前，将 JSON 中包含的 27 项训练超参数强制覆盖到 `self.options` 字典中，同时严格保护模型结构参数（`resolution`, `archi` 等）在首次运行时不被篡改。
 
-- [ ] 在 `ModelBase.__init__` 方法中新增 `options_json=None` 参数，保存成员变量 `self.options_json = options_json`。
-- [ ] 当 `options_json` 不为空时，自动设置 `self.silent_start = True`。
-- [ ] 在 `ModelBase.__init__` 中反序列化 `data.dat` 之后、`on_initialize_options()` 调用之前插入 `self.load_train_step_config()`。
-- [ ] 实现 `load_train_step_config(self)` 方法，包含 JSON 安全解析、类型转换、特殊字段映射与错误捕获。
-- [ ] 实现布尔值解析转换逻辑（处理 `True`/`False` 以及字符串 `"true"`/`"false"`）。
-- [ ] 实现数值解析转换逻辑（支持 `int` 与 `float` 自动判别转换）。
-- [ ] 实现 `lr_dropout` 的类型转换规则：布尔值 `True` 映射为 `'y'`，`False` 映射为 `'n'`；支持原生字符串 `'n'`, `'y'`, `'cpu'`。
-- [ ] 确保支持的 27 项超参数能准确覆盖至 `self.options` 字典中。
-- [ ] 保持 `is_first_run` 模型首次运行建立逻辑原状，防止神经网络结构参数（`resolution`, `archi`, `ae_dims`, `e_dims`, `d_dims` 等）被外部动态篡改。
-- [ ] 增加 `try...except` 异常捕获机制，JSON 解析失败时通过 `io.log_err` 输出日志警告，避免导致主进程崩溃。
+- [x] 在 `ModelBase.__init__` 方法中新增 `options_json=None` 参数，保存成员变量 `self.options_json = options_json`。
+- [x] 当 `options_json` 不为空时，自动设置 `self.silent_start = True`。
+- [x] 在 `ModelBase.__init__` 中反序列化 `data.dat` 之后、`on_initialize_options()` 调用之前插入 `self.load_train_step_config()`。
+- [x] 实现 `load_train_step_config(self)` 方法，包含 JSON 安全解析、类型转换、特殊字段映射与错误捕获。
+- [x] 实现布尔值解析转换逻辑（处理 `True`/`False` 以及字符串 `"true"`/`"false"`）。
+- [x] 实现数值解析转换逻辑（支持 `int` 与 `float` 自动判别转换）。
+- [x] 实现 `lr_dropout` 的类型转换规则：布尔值 `True` 映射为 `'y'`，`False` 映射为 `'n'`；支持原生字符串 `'n'`, `'y'`, `'cpu'`。
+- [x] 确保支持的 27 项超参数能准确覆盖至 `self.options` 字典中。
+- [x] 保持 `is_first_run` 模型首次运行建立逻辑原状，防止神经网络结构参数（`resolution`, `archi`, `ae_dims`, `e_dims`, `d_dims` 等）被外部动态篡改。
+- [x] 增加 `try...except` 异常捕获机制，JSON 解析失败时通过 `io.log_err` 输出日志警告，避免导致主进程崩溃。
 
 ## 27 项训练超参数 Key 与类型规范对照表
 
@@ -99,10 +99,10 @@ def load_train_step_config(self):
 
 ## 完成总结报告
 
-- [ ] 完成后需在 `.scratch/batch1-correctness-foundation/reports/13-options-json-parser-override-summary.md` 生成 summary 报告。
-- [ ] 报告须包含注入覆盖逻辑说明、数据类型校验结果、结构参数防护测试结果。
-- [ ] 已在本 issue 的 `## Comments` 中追加 summary 报告路径。
+- [x] 完成后需在 `.scratch/batch1-correctness-foundation/reports/13-options-json-parser-override-summary.md` 生成 summary 报告。
+- [x] 报告须包含注入覆盖逻辑说明、数据类型校验结果、结构参数防护测试结果。
+- [x] 已在本 issue 的 `## Comments` 中追加 summary 报告路径。
 
 ## Comments
 
-- 待开发人员或 Agent 执行完成后填写执行记录。
+- 2026-07-28 16:22: 已完成后端 JSON 解析注入与选项覆写功能，生成总结报告：[13-options-json-parser-override-summary.md](file:///t:/deep-face-lab-tf2.x/.scratch/batch1-correctness-foundation/reports/13-options-json-parser-override-summary.md)。

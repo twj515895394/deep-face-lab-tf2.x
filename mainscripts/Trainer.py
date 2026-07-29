@@ -28,6 +28,7 @@ def trainerThread (s2c, c2s, e,
                     silent_start=False,
                     execute_programs = None,
                     debug=False,
+                    options_json=None,
                     **kwargs):
     while True:
         try:
@@ -59,7 +60,14 @@ def trainerThread (s2c, c2s, e,
                         force_gpu_idxs=force_gpu_idxs,
                         cpu_only=cpu_only,
                         silent_start=silent_start,
+                        options_json=options_json,
                         debug=debug)
+
+            try:
+                save_interval_min = max(1, int(model.options.get('save_interval_min', 25)))
+            except Exception:
+                save_interval_min = 25
+            io.log_info(f"Auto-save interval: {save_interval_min} minutes.")
 
             is_reached_goal = model.is_reached_iter_goal()
 

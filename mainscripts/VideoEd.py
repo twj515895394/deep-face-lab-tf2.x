@@ -176,7 +176,7 @@ def video_from_sequence( input_dir, output_file, reference_file=None, ext=None, 
 
     if not output_file_path.parent.exists():
         output_file_path.parent.mkdir(parents=True, exist_ok=True)
-        return
+
 
     out_ext = output_file_path.suffix
 

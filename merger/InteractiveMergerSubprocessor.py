@@ -180,7 +180,7 @@ class InteractiveMergerSubprocessor(Subprocessor):
         session_data = None
         if self.is_interactive and self.merger_session_filepath.exists():
             io.input_skip_pending()
-            if io.input_bool ("Use saved session?", True):
+            if io.input_bool ("是否使用已保存的会话？ (Use saved session?)", True):
                 try:
                     with open( str(self.merger_session_filepath), "rb") as f:
                         session_data = pickle.loads(f.read())
@@ -217,7 +217,7 @@ class InteractiveMergerSubprocessor(Subprocessor):
                         break
 
             if frames_equal:
-                io.log_info ('Using saved session from ' + '/'.join (self.merger_session_filepath.parts[-2:]) )
+                io.log_info ('正在使用已保存会话 (Using saved session from) ' + '/'.join (self.merger_session_filepath.parts[-2:]) )
 
                 for frame in s_frames:
                     if frame.cfg is not None:
@@ -314,6 +314,28 @@ class InteractiveMergerSubprocessor(Subprocessor):
             self.screen_manager.set_current (self.help_screen)
             self.screen_manager.show_current()
 
+            # 控制台中文快捷键说明（帮助图仍为英文原图，此处补充中文对照）
+            if self.merger_config.type == MergerConfig.TYPE_MASKED:
+                io.log_info(
+                    "交互合并快捷键 (Interactive merger hotkeys):\n"
+                    "  ` 1-6 : 切换合并模式 mode\n"
+                    "  q/a   : 直方图匹配阈值 hist_match_threshold +/- \n"
+                    "  w/s   : 遮罩侵蚀 erode_mask +/- \n"
+                    "  e/d   : 遮罩模糊 blur_mask +/- \n"
+                    "  r/f   : 运动模糊 motion_blur +/- \n"
+                    "  t/g   : 超分辨率 super_resolution +/- \n"
+                    "  y/h   : 模糊/锐化 blursharpen +/- \n"
+                    "  u/j   : 输出脸缩放 face_scale +/- \n"
+                    "  i/k   : 降噪退化 denoise +/- \n"
+                    "  o/l   : 双三次退化 bicubic +/- \n"
+                    "  p/;   : 颜色退化 color_degrade +/- \n"
+                    "  z     : 切换遮罩直方图匹配 masked_hist_match\n"
+                    "  x     : 切换遮罩模式 mask_mode\n"
+                    "  c     : 切换颜色迁移 color_transfer\n"
+                    "  n     : 切换锐化模式 sharpen_mode\n"
+                    "  按住 Shift 可加大步进\n"
+                )
+
             self.masked_keys_funcs = {
                     '`' : lambda cfg,shift_pressed: cfg.set_mode(0),
                     '1' : lambda cfg,shift_pressed: cfg.set_mode(1),
@@ -370,7 +392,7 @@ class InteractiveMergerSubprocessor(Subprocessor):
             }
             self.merger_session_filepath.write_bytes( pickle.dumps(session_data) )
 
-            io.log_info ("Session is saved to " + '/'.join (self.merger_session_filepath.parts[-2:]) )
+            io.log_info ("会话已保存到 (Session is saved to) " + '/'.join (self.merger_session_filepath.parts[-2:]) )
 
     #override
     def on_tick(self):

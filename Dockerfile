@@ -24,19 +24,21 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 # 3) 升级 pip
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# 4) 安装 Python 依赖（严格遵循 requirements.txt）
+# 4) 安装 Python 依赖（严格遵循 requirements.txt，利用 BuildKit 缓存与清华极速源加速）
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r /tmp/requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 
 # 5) GUI 依赖（用于 XSeg Editor / preview，配合 Win10 + VcXsrv）
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    apt-get update && apt-get install -y --no-install-recommends \
     libgl1 libglib2.0-0 libxkbcommon0 libdbus-1-3 \
     libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
     libxcb-render-util0 libxcb-shape0 libxcb-sync1 libxcb-xfixes0 \
     libxcb-xinerama0 libxkbcommon-x11-0 libxcb-xkb1 \
     libsm6 libice6 libxcb-util1 \
     fonts-dejavu-core fontconfig \
-    && pip install --no-cache-dir PyQt5 -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com \
+    && pip install PyQt5 -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn \
     && mkdir -p /opt/venv/lib/python3.11/site-packages/cv2/qt/fonts \
     && ln -sf /usr/share/fonts/truetype/dejavu/*.ttf /opt/venv/lib/python3.11/site-packages/cv2/qt/fonts/ \
     && rm -rf /var/lib/apt/lists/*

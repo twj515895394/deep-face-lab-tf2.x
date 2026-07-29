@@ -12,7 +12,7 @@
 | **镜像** | `dfl-tf2:latest` (ID: `8d15fdad9b28`, 10.4 GB) — 通过 `docker commit` 固化，含全部 xcb 依赖 |
 | **容器** | `dfl-tf2` — 用户已启动运行中，GPU 识别正常 |
 | **训练** | 已验证可正常启动并加载数据 (faceset.pak, aligned jpg)，按 Enter 可正常保存退出 |
-| **GUI 预览** | ✅ 已解决 — VcXsrv 在 display `:2`，`train_dfl.bat` 已修正 |
+| **GUI 预览** | ✅ 已解决 — VcXsrv 固定 `:0`，`train_dfl.bat` 自动检测 display |
 | **WSL 内存/swap** | `.wslconfig` 已配置 (48GB/44GB)，待 `wsl --shutdown` 后生效 |
 
 ---
@@ -28,7 +28,8 @@
 - `run_dfl.sh` — Git Bash 版，支持 `--rebuild` 重建镜像
 
 ### 3. 训练脚本
-- `train_dfl.bat` — cmd 版，顶部三个变量改路径，启动前自动杀残留进程，DISPLAY=`:2`
+- `train_dfl.bat` — cmd 版，顶部三个变量改路径，启动前自动杀残留进程
+- **新增 auto-detect DISPLAY**：自动扫描 VcXsrv 监听端口，计算 display 号，无需手动改
 - `train_dfl.sh` — Git Bash 版
 
 ### 4. WSL 配置 (`C:\Users\Administrator\.wslconfig`)
@@ -50,25 +51,20 @@ guiApplications=false
 
 ## GUI 预览 — 关键发现
 
-**VcXsrv 的 display 号不一定是 `:0`**，取决于 XLaunch 启动参数。你的 VcXsrv 用了 `-displayfd 492`（动态分配），实际分配到了 `:2`（监听 6002 端口）。
+**VcXsrv 每次重启 display 号可能漂移**（`-displayfd` 动态分配导致）。已通过两个手段解决：
 
-**检查 VcXsrv 实际 display 号的方法（cmd）：**
-```cmd
-netstat -ano | findstr LISTENING | findstr vcxsrv
-```
-端口号减去 6000 就是 display 号（如 `6002` → `:2`）。
-
-**如果 VcXsrv 重启后 display 号变了**，改 `train_dfl.bat` 第 12 行：
+### 方案一（当前生效）：`train_dfl.bat` 自动检测
 ```bat
-set DISPLAY=host.docker.internal:2   ← 改这里的数字
+REM 自动扫描 VcXsrv 端口并计算 display 号
+for /f "tokens=2 delims=:" %%a in ('netstat -ano ^| findstr "LISTENING" ^| findstr "vcxsrv" ^| findstr "0.0.0.0:"') do (
+  set /a DISPLAY_NUM=%%a-6000
+  set DISPLAY=host.docker.internal:!DISPLAY_NUM!
+)
 ```
+**无需手动干预，每次执行自动找到正确的 display 号。**
 
-当前已确认可用：
-```bash
-docker exec -e DISPLAY=host.docker.internal:2 dfl-tf2 python -c \
-  "from PyQt5.QtWidgets import QApplication; QApplication([]); print('OK')"
-# Output: Qt OK
-```
+### 方案二（推荐，下次启动 XLaunch 时配置）：
+启动 XLaunch 时选择 **"One window"** 或去掉 `-displayfd`，手动指定 display 为 `0`，这样 VcXsrv 始终监听 6000 端口，`DISPLAY=host.docker.internal:0` 永远正确。
 
 ---
 
@@ -77,7 +73,7 @@ docker exec -e DISPLAY=host.docker.internal:2 dfl-tf2 python -c \
 | 文件 | 用途 | 执行方式 |
 |---|---|---|
 | `run_dfl.bat` | 启动容器 + 进入 bash | 在 `T:\deep-face-lab-tf2.x\` 执行 `run_dfl.bat` |
-| `train_dfl.bat` | 发送训练命令（含 GUI） | 另开 cmd 窗口执行 `train_dfl.bat` |
+| `train_dfl.bat` | 发送训练命令（含 GUI，自动检测 display） | 另开 cmd 窗口执行 `train_dfl.bat` |
 | `run_dfl.sh` | 同上，Git Bash 版 | `bash run_dfl.sh` |
 | `train_dfl.sh` | 同上，Git Bash 版 | `bash train_dfl.sh` |
 | `Dockerfile` | 镜像定义（含 xcb 依赖） | `docker build -t dfl-tf2:latest .` |
@@ -95,7 +91,7 @@ set MODEL_DIR=/h/models2/model-杨紫
 
 1. **[P1]** 执行 `wsl --shutdown` + 重启 Docker Desktop，使 48GB/44GB swap 生效，检查 `D:\WSL-Swap\swap.vhdx` 是否生成
 2. **[P2]** 网络恢复后重建镜像（`bash run_dfl.sh --rebuild`），把 xcb 依赖通过 Dockerfile 层固化（目前用 `docker commit` 临时固化，功能等效但不够规范）
-3. **[P3]** VcXsrv 每次重启 display 号可能变，建议固定为 `:0`：重新配置 XLaunch，去掉 `-displayfd`，改用 `-screen 0`
+3. **[P3]** XLaunch 启动时固定 display 为 `:0`：选择 "One window" + 去掉 `-displayfd`，使端口始终为 6000
 
 ---
 

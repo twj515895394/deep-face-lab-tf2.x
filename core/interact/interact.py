@@ -482,9 +482,11 @@ class InteractDesktop(InteractBase):
         if _HEADLESS_MODE:
             safe_name = wnd_name.replace('/', '_').replace('\\', '_').replace(':', '_')
             save_path = os.path.join(_headless_preview_dir, f"{safe_name}.png")
-            cv2.imwrite(save_path, img)
+            from core.cv2ex import cv2_imwrite
+            cv2_imwrite(save_path, img)
         else:
             cv2.imshow (wnd_name, img)
+
 
     def on_capture_mouse (self, wnd_name):
         self.last_xy = (0,0)

@@ -7,8 +7,16 @@ if __name__ == "__main__":
     nn.initialize_main_env()
     import os
     import sys
+    import io as sys_io
     import time
     import argparse
+
+    if sys.platform == 'win32':
+        if hasattr(sys.stdout, 'buffer'):
+            sys.stdout = sys_io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        if hasattr(sys.stderr, 'buffer'):
+            sys.stderr = sys_io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 
     from core import pathex
     from core import osex
@@ -134,6 +142,7 @@ if __name__ == "__main__":
                   'silent_start'             : arguments.silent_start,
                   'execute_programs'         : [ [int(x[0]), x[1] ] for x in arguments.execute_program ],
                   'debug'                    : arguments.debug,
+                  'options_json'             : arguments.options_json,
                   }
         from mainscripts import Trainer
         Trainer.main(**kwargs)
@@ -151,6 +160,7 @@ if __name__ == "__main__":
     p.add_argument('--cpu-only', action="store_true", dest="cpu_only", default=False, help="Train on CPU.")
     p.add_argument('--force-gpu-idxs', dest="force_gpu_idxs", default=None, help="Force to choose GPU indexes separated by comma.")
     p.add_argument('--silent-start', action="store_true", dest="silent_start", default=False, help="Silent start. Automatically chooses Best GPU and last used model.")
+    p.add_argument('--options-json', default=None, dest="options_json", help="config training params in json format")
     
     p.add_argument('--execute-program', dest="execute_program", default=[], action='append', nargs='+')
     p.set_defaults (func=process_train)

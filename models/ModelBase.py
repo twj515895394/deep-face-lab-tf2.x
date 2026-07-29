@@ -37,6 +37,7 @@ class ModelBase(object):
                        force_model_class_name=None,
                        silent_start=False,
                        compress_preview=True,
+                       options_json=None,
                        **kwargs):
         self.is_training = is_training
         self.is_exporting = is_exporting
@@ -48,6 +49,9 @@ class ModelBase(object):
         self.no_preview = no_preview
         self.debug = debug
         self.compress_preview = compress_preview
+        self.options_json = options_json
+        if self.options_json is not None and len(self.options_json) > 0:
+            silent_start = True
 
         self.model_class_name = model_class_name = Path(inspect.getmodule(self).__file__).parent.name.rsplit("_", 1)[1]
 
@@ -209,6 +213,9 @@ class ModelBase(object):
         #####
 
         io.input_skip_pending()
+        self.load_train_step_config()
+        if 'batch_size' in self.options:
+            self.batch_size = self.options['batch_size']
         self.on_initialize_options()
 
         if self.is_first_run():
@@ -254,6 +261,52 @@ class ModelBase(object):
                     self.autobackups_path.mkdir(exist_ok=True)
 
         io.log_info( self.get_summary_text() )
+
+    def load_train_step_config(self):
+        if self.options_json is not None and len(self.options_json) > 0:
+            try:
+                new_options = json.loads(self.options_json)
+                
+                # 结构参数防护列表
+                structural_keys = {'resolution', 'archi', 'ae_dims', 'e_dims', 'd_dims', 'd_mask_dims', 'head_name'}
+
+                injected_count = 0
+                for k, v in new_options.items():
+                    if k in structural_keys and not self.is_first_run():
+                        # 已存在的模型不允许动态修改结构参数
+                        continue
+
+                    # 1. 处理布尔类型
+                    if v is True or (isinstance(v, str) and v.lower() == 'true'):
+                        val = True
+                    elif v is False or (isinstance(v, str) and v.lower() == 'false'):
+                        val = False
+                    # 2. 处理数值与字符串
+                    elif isinstance(v, (int, float)):
+                        val = v
+                    elif isinstance(v, str):
+                        try:
+                            fv = float(v)
+                            if fv == int(fv) and 'e' not in v.lower() and '.' not in v:
+                                val = int(fv)
+                            else:
+                                val = fv
+                        except (ValueError, TypeError):
+                            val = v
+                    else:
+                        val = v
+
+                    # 3. 特殊逻辑修正：lr_dropout 的布尔与字符映射 ('y'/'n'/'cpu')
+                    if k == 'lr_dropout' and isinstance(val, bool):
+                        val = 'y' if val else 'n'
+
+                    # 覆盖写入 self.options
+                    self.options[k] = val
+                    injected_count += 1
+                
+                io.log_info(f"✅ [GUI_OPTIONS] 成功从 --options-json 动态解析并注入了 {injected_count} 项训练超参数")
+            except Exception as e:
+                io.log_err(f"❌ [GUI_OPTIONS] 从 --options-json 解析配置失败: {e}")
 
     def update_sample_for_preview(self, choose_preview_history=False, force_new=False):
         if self.sample_for_preview is None or choose_preview_history or force_new:
@@ -310,6 +363,10 @@ class ModelBase(object):
         return def_value
 
     def ask_override(self):
+        if self.options_json is not None and len(self.options_json) > 0:
+            io.log_info("检测到 GUI 选项 JSON，自动跳过手动参数设置倒计时。")
+            return False
+
         return self.is_training and self.iter != 0 and io.input_in_time ("Press enter in 60 seconds to override model settings.", 5 if io.is_colab() else 60 )
 
     def ask_autobackup_hour(self, default_value=0):
@@ -420,9 +477,10 @@ class ModelBase(object):
         return self.preview_history_writer
 
     def save(self):
-        Path( self.get_summary_path() ).write_text( self.get_summary_text() )
+        Path( self.get_summary_path() ).write_text( self.get_summary_text(), encoding='utf-8' )
 
         self.onSave()
+
 
         sample_for_preview_save = None
         if self.sample_for_preview is not None:

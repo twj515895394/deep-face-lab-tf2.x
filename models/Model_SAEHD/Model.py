@@ -1286,7 +1286,7 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
 
         n_samples = min(4, self.get_batch_size(), 800 // self.resolution )
 
-        if self.resolution <= 256:
+        if self.resolution <= 400:
             result = []
 
             st = []

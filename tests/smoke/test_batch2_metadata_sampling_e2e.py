@@ -75,7 +75,7 @@ class TestBatch2MetadataSamplingE2E(unittest.TestCase):
 
     def test_e2e_packed_faceset_pipeline(self):
         """
-        End-to-End Test: Packed faceset.pak -> Analyzer -> Sidecar JSON -> Loader -> PoseBalancedPolicy
+        End-to-End Test: Packed faceset.pak -> Analyzer -> Sidecar JSON -> Loader -> Policy -> IndexHost -> draw
         """
         # 1. Analyzer
         analyzer = FacesetAnalyzer()
@@ -90,11 +90,50 @@ class TestBatch2MetadataSamplingE2E(unittest.TestCase):
         self.assertEqual(runtime.status, FacesetMetadataStatus.LOADED)
         self.assertTrue(np.any(runtime.pose_valid))
 
-        # 3. Policy
-        cfg = SamplingConfig(mode=SamplingMode.POSE_BALANCED.value, pose_balance_strength=0.5, seed=42)
+        valid_ids = runtime.yaw_bucket_ids[runtime.pose_valid]
+        unique_buckets = set(valid_ids)
+        self.assertGreaterEqual(len(unique_buckets), 2, f"Packed dataset must have >= 2 valid yaw buckets, got {unique_buckets}")
+
+        # 3. Policy & Non-uniform weights
+        cfg = SamplingConfig(mode=SamplingMode.POSE_BALANCED.value, pose_balance_strength=0.8, uniform_mix=0.0, seed=42)
         policy = PoseBalancedPolicy(cfg, runtime_metadata=runtime)
         pose_res = policy.build_weights()
+
         self.assertTrue(np.all(np.isfinite(pose_res.sample_weights)))
+        self.assertFalse(np.allclose(pose_res.sample_weights, 1.0), "Packed sample_weights must be non-uniform")
+
+        from samplelib.sampling.weights import weights_to_probabilities
+        probs = weights_to_probabilities(pose_res.sample_weights, uniform_mix=0.0)
+        self.assertAlmostEqual(float(np.sum(probs)), 1.0, places=5)
+
+        # 4. IndexHost & Draws
+        host = policy.build_index_host(samples)
+        client = host.create_cli()
+        draws = client.multi_get(1000)
+        host.close()
+
+        self.assertEqual(len(draws), 1000)
+        self.assertTrue(np.all((np.array(draws) >= 0) & (np.array(draws) < len(samples))))
+
+    def test_packed_and_ordinary_share_canonical_bucket_ids(self):
+        """Verify Ordinary and Packed datasets map identical sample names to identical canonical yaw bucket IDs."""
+        ord_samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        ord_runtime = FacesetMetadataLoader.load(self.ordinary_dir, ord_samples)
+
+        pak_samples = SampleLoader.load(SampleType.FACE, self.packed_dir)
+        pak_runtime = FacesetMetadataLoader.load(self.packed_dir, pak_samples)
+
+        ord_by_name = {Path(getattr(s, "filename")).name: ord_runtime.yaw_bucket_ids[i] for i, s in enumerate(ord_samples) if ord_runtime.pose_valid[i]}
+        pak_by_name = {Path(getattr(s, "filename")).name: pak_runtime.yaw_bucket_ids[i] for i, s in enumerate(pak_samples) if pak_runtime.pose_valid[i]}
+
+
+        common_names = set(ord_by_name.keys()) & set(pak_by_name.keys())
+        self.assertGreater(len(common_names), 0)
+        for name in common_names:
+            self.assertEqual(
+                ord_by_name[name], pak_by_name[name],
+                f"Sample {name} yaw bucket ID mismatch: Ordinary={ord_by_name[name]}, Packed={pak_by_name[name]}"
+            )
 
     def test_e2e_legacy_alias_sidecar_reading(self):
         """
@@ -112,7 +151,6 @@ class TestBatch2MetadataSamplingE2E(unittest.TestCase):
         s2_key = build_sample_key(getattr(samples[2], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
         s2_id = build_sample_id(s2_key)
 
-        # Create sidecar with legacy aliases
         alias_raw = {
             "schema_version": 1,
             "analyzer_version": "v1.0",
@@ -175,8 +213,8 @@ class TestBatch2MetadataSamplingE2E(unittest.TestCase):
         unique_buckets = set(valid_ids)
         self.assertGreaterEqual(len(unique_buckets), 2, f"Expected at least 2 distinct yaw buckets, got {unique_buckets}")
 
-        # 2. Non-uniform weights with strength=0.8
-        cfg = SamplingConfig(mode=SamplingMode.POSE_BALANCED.value, pose_balance_strength=0.8, seed=42)
+        # 2. Non-uniform weights with strength=0.8, uniform_mix=0.0 to align expected_distribution
+        cfg = SamplingConfig(mode=SamplingMode.POSE_BALANCED.value, pose_balance_strength=0.8, uniform_mix=0.0, seed=42)
         policy = PoseBalancedPolicy(cfg, runtime_metadata=runtime)
         pose_res = policy.build_weights()
 
@@ -202,7 +240,7 @@ class TestBatch2MetadataSamplingE2E(unittest.TestCase):
         )
 
         # 4. balance_strength = 0 produces uniform 1.0 weights
-        cfg_zero = SamplingConfig(mode=SamplingMode.POSE_BALANCED.value, pose_balance_strength=0.0, seed=42)
+        cfg_zero = SamplingConfig(mode=SamplingMode.POSE_BALANCED.value, pose_balance_strength=0.0, uniform_mix=0.0, seed=42)
         policy_zero = PoseBalancedPolicy(cfg_zero, runtime_metadata=runtime)
         res_zero = policy_zero.build_weights()
         self.assertTrue(np.allclose(res_zero.sample_weights, 1.0), "strength=0 must restore uniform 1.0 weights")
@@ -240,4 +278,5 @@ class TestBatch2MetadataSamplingE2E(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

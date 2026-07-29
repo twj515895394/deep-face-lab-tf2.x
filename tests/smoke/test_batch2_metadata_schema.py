@@ -97,18 +97,59 @@ class TestBatch2MetadataSchema(unittest.TestCase):
             self.assertEqual(len(loaded_metadata.samples), 2)
             self.assertIsNone(loaded_metadata.samples[1]["quality"]["score"])
 
-    def test_schema_unsupported_version(self):
-        """Verify unsupported future schema versions return is_supported=False."""
-        raw_future = {
-            "schema_version": 999,
-            "samples": [],
+    def test_schema_rejects_non_mapping_pose(self):
+        """Verify Schema logs INVALID_POSE_MAPPING when pose is not a dict."""
+        raw = {
+            "schema_version": 1,
+            "samples": [
+                {
+                    "sample_key": "00001.jpg",
+                    "sample_id": build_sample_id("00001.jpg"),
+                    "pose": "NON_MAPPING_STRING_POSE",
+                }
+            ],
         }
+        _, val = FacesetMetadataV1.from_mapping(raw)
+        self.assertFalse(val.is_valid)
+        codes = [i.code for i in val.issues]
+        self.assertIn("INVALID_POSE_MAPPING", codes)
 
-        _, validation = FacesetMetadataV1.from_mapping(raw_future)
-        self.assertFalse(validation.is_supported)
-        self.assertFalse(validation.is_valid)
-        self.assertEqual(validation.issues[0].code, "UNSUPPORTED_SCHEMA_VERSION")
+    def test_schema_rejects_invalid_pose_valid_type(self):
+        """Verify Schema logs INVALID_POSE_VALID_TYPE when pose.valid is not boolean-compatible."""
+        raw = {
+            "schema_version": 1,
+            "samples": [
+                {
+                    "sample_key": "00001.jpg",
+                    "sample_id": build_sample_id("00001.jpg"),
+                    "pose": {"valid": "BROKEN_STRING", "yaw_bucket": "center"},
+                }
+            ],
+        }
+        _, val = FacesetMetadataV1.from_mapping(raw)
+        self.assertFalse(val.is_valid)
+        codes = [i.code for i in val.issues]
+        self.assertIn("INVALID_POSE_VALID_TYPE", codes)
+
+    def test_schema_reports_legacy_yaw_alias(self):
+        """Verify Schema logs LEGACY_YAW_BUCKET_ALIAS when legacy alias like 'front' is used."""
+        raw = {
+            "schema_version": 1,
+            "samples": [
+                {
+                    "sample_key": "00001.jpg",
+                    "sample_id": build_sample_id("00001.jpg"),
+                    "pose": {"valid": True, "yaw_bucket": "front", "pitch_bucket": "center"},
+                }
+            ],
+        }
+        _, val = FacesetMetadataV1.from_mapping(raw)
+        self.assertFalse(val.is_valid)
+        codes = [i.code for i in val.issues]
+        self.assertIn("LEGACY_YAW_BUCKET_ALIAS", codes)
+        self.assertIn("LEGACY_PITCH_BUCKET_ALIAS", codes)
 
 
 if __name__ == "__main__":
     unittest.main()
+

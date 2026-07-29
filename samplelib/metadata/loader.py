@@ -173,8 +173,21 @@ class FacesetMetadataLoader:
                         meta_by_id[sid] = s_rec
 
         warnings = []
+        if val_res and val_res.issues:
+            for issue in val_res.issues:
+                if issue.code in (
+                    "LEGACY_YAW_BUCKET_ALIAS",
+                    "LEGACY_PITCH_BUCKET_ALIAS",
+                    "INVALID_POSE_MAPPING",
+                    "INVALID_POSE_VALID_TYPE",
+                    "INVALID_YAW_BUCKET",
+                    "INVALID_PITCH_BUCKET",
+                ):
+                    warnings.append(f"SCHEMA_ISSUE [{issue.code}] {issue.message}")
+
         if len(duplicate_ids) > 0:
             warnings.append(f"Detected {len(duplicate_ids)} duplicate sample_id records in metadata.")
+
 
         alias_yaw_count = 0
         alias_yaw_examples = []
@@ -219,17 +232,18 @@ class FacesetMetadataLoader:
                 rec = meta_by_id[sid]
                 matched_count += 1
 
-                # Check record structural validity
-                if not isinstance(rec, dict) or not (
+                # Check record structural validity (must have valid child dict)
+                has_child_container = (
                     isinstance(rec.get("pose"), dict)
                     or isinstance(rec.get("quality"), dict)
                     or isinstance(rec.get("image"), dict)
-                    or "valid" in rec
-                ):
+                )
+                if not isinstance(rec, dict) or not has_child_container:
                     metadata_valid[i] = False
                     continue
 
                 metadata_valid[i] = True
+
 
                 # Quality validity and extraction
                 if get_record_quality_valid(rec):

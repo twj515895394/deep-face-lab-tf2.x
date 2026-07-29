@@ -122,6 +122,24 @@ def is_valid_pitch_bucket(name: Optional[Any]) -> bool:
     return is_valid
 
 
+def parse_bool_valid(val: Any) -> bool:
+    """
+    Safely parse boolean validity value.
+    Prevents Python string truthiness traps (e.g. bool("false") == True).
+    """
+    if val is True or val == 1:
+        return True
+    if val is False or val == 0:
+        return False
+    if isinstance(val, str):
+        val_clean = val.strip().lower()
+        if val_clean in ("true", "1"):
+            return True
+        if val_clean in ("false", "0"):
+            return False
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Common Sample Record Validity Accessors (Single Source of Truth)
 # ---------------------------------------------------------------------------
@@ -131,7 +149,7 @@ def get_record_image_valid(record: dict) -> bool:
         return False
     img_info = record.get("image")
     if isinstance(img_info, dict):
-        return bool(img_info.get("valid", False))
+        return parse_bool_valid(img_info.get("valid"))
     return False
 
 
@@ -139,11 +157,12 @@ def get_record_pose_valid(record: dict) -> bool:
     if not isinstance(record, dict):
         return False
     pose_info = record.get("pose")
-    if isinstance(pose_info, dict) and bool(pose_info.get("valid", False)):
+    if isinstance(pose_info, dict) and parse_bool_valid(pose_info.get("valid")):
         yaw_str = pose_info.get("yaw_bucket")
         _, is_valid = get_yaw_bucket_id(yaw_str)
         return is_valid
     return False
+
 
 
 def get_record_quality_valid(record: dict) -> bool:

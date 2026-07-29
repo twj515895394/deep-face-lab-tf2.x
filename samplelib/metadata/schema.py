@@ -5,7 +5,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from samplelib.metadata.contracts import is_valid_pitch_bucket, is_valid_yaw_bucket
+from samplelib.metadata.contracts import (
+    LEGACY_PITCH_ALIASES,
+    LEGACY_YAW_ALIASES,
+    is_valid_pitch_bucket,
+    is_valid_yaw_bucket,
+)
+
 
 SCHEMA_VERSION_CURRENT = 1
 
@@ -134,16 +140,30 @@ class FacesetMetadataV1:
                         continue
                 seen_sample_ids.add(sample_id)
 
-                pose_info = sample.get("pose")
-                if isinstance(pose_info, dict) and pose_info.get("valid", False):
-                    y_b = pose_info.get("yaw_bucket")
-                    p_b = pose_info.get("pitch_bucket")
-                    if not is_valid_yaw_bucket(y_b):
-                        issues.append(MetadataValidationIssue(code="INVALID_YAW_BUCKET", message=f"Unrecognized yaw_bucket: {y_b}", sample_key=sample_key))
-                    if not is_valid_pitch_bucket(p_b):
-                        issues.append(MetadataValidationIssue(code="INVALID_PITCH_BUCKET", message=f"Unrecognized pitch_bucket: {p_b}", sample_key=sample_key))
+                if "pose" in sample:
+                    pose_info = sample.get("pose")
+                    if not isinstance(pose_info, dict):
+                        issues.append(MetadataValidationIssue(code="INVALID_POSE_MAPPING", message=f"Sample pose field must be a dict/mapping, got {type(pose_info).__name__}", sample_key=sample_key))
+                    else:
+                        valid_val = pose_info.get("valid")
+                        if valid_val is not None and not isinstance(valid_val, (bool, int)) and not (isinstance(valid_val, str) and valid_val.strip().lower() in ("true", "false", "1", "0")):
+                            issues.append(MetadataValidationIssue(code="INVALID_POSE_VALID_TYPE", message=f"Sample pose.valid must be boolean-compatible, got {valid_val!r}", sample_key=sample_key))
+
+                        y_b = pose_info.get("yaw_bucket")
+                        p_b = pose_info.get("pitch_bucket")
+
+                        if isinstance(y_b, str) and y_b.strip() in LEGACY_YAW_ALIASES:
+                            issues.append(MetadataValidationIssue(code="LEGACY_YAW_BUCKET_ALIAS", message=f"Legacy yaw_bucket alias used: {y_b} -> {LEGACY_YAW_ALIASES[y_b.strip()]}", sample_key=sample_key))
+                        elif y_b is not None and not is_valid_yaw_bucket(y_b):
+                            issues.append(MetadataValidationIssue(code="INVALID_YAW_BUCKET", message=f"Unrecognized yaw_bucket: {y_b}", sample_key=sample_key))
+
+                        if isinstance(p_b, str) and p_b.strip() in LEGACY_PITCH_ALIASES:
+                            issues.append(MetadataValidationIssue(code="LEGACY_PITCH_BUCKET_ALIAS", message=f"Legacy pitch_bucket alias used: {p_b} -> {LEGACY_PITCH_ALIASES[p_b.strip()]}", sample_key=sample_key))
+                        elif p_b is not None and not is_valid_pitch_bucket(p_b):
+                            issues.append(MetadataValidationIssue(code="INVALID_PITCH_BUCKET", message=f"Unrecognized pitch_bucket: {p_b}", sample_key=sample_key))
 
                 validated_samples.append(sample)
+
 
 
         instance = cls(

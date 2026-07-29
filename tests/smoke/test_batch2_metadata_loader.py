@@ -174,6 +174,8 @@ class TestBatch2MetadataLoader(unittest.TestCase):
             + quality_valid.nbytes
             + metadata_valid.nbytes
         )
+        mb_size = total_bytes / (1024 * 1024)
+        self.assertLess(mb_size, 2.0, f"Memory size {mb_size:.2f}MB exceeds 2MB limit for {N} samples")
 
     def test_loader_malformed_record_metadata_valid(self):
         from samplelib import SampleLoader, SampleType
@@ -185,7 +187,6 @@ class TestBatch2MetadataLoader(unittest.TestCase):
         s0_key = build_sample_key(getattr(samples[0], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
         s0_id = build_sample_id(s0_key)
 
-        # Record exists but is malformed (not a dict or empty)
         bad_raw = {
             "schema_version": 1,
             "analyzer_version": "v1.0",
@@ -193,6 +194,7 @@ class TestBatch2MetadataLoader(unittest.TestCase):
             "samples": [
                 "NOT_A_DICT_RECORD",
                 {"sample_key": s0_key, "sample_id": s0_id},  # Empty record without pose/quality/image
+                {"sample_key": s0_key, "sample_id": s0_id, "valid": True},  # Top-level valid only
             ],
         }
 
@@ -201,6 +203,84 @@ class TestBatch2MetadataLoader(unittest.TestCase):
 
         runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=bad_meta_path)
         self.assertFalse(runtime.metadata_valid[0])
+
+    def test_loader_top_level_valid_only_is_not_metadata_valid(self):
+        """Verify record with top-level 'valid: true' and NO child dicts gets metadata_valid=False."""
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        s0_key = build_sample_key(getattr(samples[0], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+        s0_id = build_sample_id(s0_key)
+
+        raw = {
+            "schema_version": 1,
+            "dataset": {"format": "ordinary", "sample_count": 1},
+            "samples": [{"sample_key": s0_key, "sample_id": s0_id, "valid": True}],
+        }
+        path = self.temp_dir / "top_level_only.v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(raw, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        self.assertFalse(runtime.metadata_valid[0])
+
+    def test_loader_does_not_treat_string_false_as_pose_valid(self):
+        """Verify string 'false' for pose.valid is not parsed as True in Python."""
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        s0_key = build_sample_key(getattr(samples[0], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+        s0_id = build_sample_id(s0_key)
+
+        raw = {
+            "schema_version": 1,
+            "dataset": {"format": "ordinary", "sample_count": 1},
+            "samples": [
+                {
+                    "sample_key": s0_key,
+                    "sample_id": s0_id,
+                    "pose": {"valid": "false", "yaw_bucket": "center"},
+                }
+            ],
+        }
+        path = self.temp_dir / "string_false_pose.v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(raw, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        self.assertFalse(runtime.pose_valid[0])
+
+    def test_loader_extreme_maps_unknown_and_emits_warning(self):
+        """Verify legacy 'extreme' yaw maps to unknown ID (-1) and emits warning."""
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        s0_key = build_sample_key(getattr(samples[0], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+        s0_id = build_sample_id(s0_key)
+
+        raw = {
+            "schema_version": 1,
+            "dataset": {"format": "ordinary", "sample_count": 1},
+            "samples": [
+                {
+                    "sample_key": s0_key,
+                    "sample_id": s0_id,
+                    "pose": {"valid": True, "yaw_bucket": "extreme", "pitch_bucket": "level"},
+                }
+            ],
+        }
+        path = self.temp_dir / "extreme_yaw.v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(raw, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        self.assertEqual(runtime.yaw_bucket_ids[0], UNKNOWN_BUCKET_ID)
+        self.assertFalse(runtime.pose_valid[0])
+        unknown_warns = [w for w in runtime.warnings if "UNKNOWN_YAW_BUCKET" in w]
+        self.assertGreater(len(unknown_warns), 0)
 
     def test_loader_alias_warnings_are_aggregated_and_bounded(self):
         from samplelib import SampleLoader, SampleType
@@ -234,9 +314,14 @@ class TestBatch2MetadataLoader(unittest.TestCase):
 
         alias_warns = [w for w in runtime.warnings if "LEGACY_YAW_ALIAS_USED" in w]
         self.assertGreater(len(alias_warns), 0)
-        # Verify examples list in warning string is bounded to <= 5
         warn_str = alias_warns[0]
         self.assertIn("count=", warn_str)
+
+        # Assert examples in warning is strictly bounded to <= 5 examples
+        if "examples=[" in warn_str:
+            ex_content = warn_str.split("examples=[")[1].rstrip("]")
+            ex_items = [x for x in ex_content.split(",") if x.strip()]
+            self.assertLessEqual(len(ex_items), 5)
 
     def test_loader_unknown_pitch_retains_valid_yaw(self):
         from samplelib import SampleLoader, SampleType
@@ -273,4 +358,5 @@ class TestBatch2MetadataLoader(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

@@ -2,7 +2,7 @@
 
 > 适用范围：`.scratch/batch2-training-data-and-sampling/issues/01-12`  
 > 目标：让能力偏弱、上下文窗口较小或容易过度发挥的编码模型，也能按明确边界完成高质量实现。  
-> 优先级：本文件约束低于正式详细设计，高于 Agent 自行推测。若 Ticket、详细设计和源码事实冲突，必须停止并在 summary 中记录，不能自行扩大范围。
+> 优先级：源码事实最高；`FINAL_AUDIT_CONTRACTS.md` 用于冻结 Ticket 中仍有歧义的实现细节。
 
 ---
 
@@ -11,20 +11,34 @@
 按以下顺序读取，不允许只读当前 Ticket：
 
 1. `.handoff/current.md`
-2. `.scratch/batch2-training-data-and-sampling/spec.md`
-3. `docs/development/batch2-training-data-and-sampling-tasks.md`
-4. 本文件
-5. 当前 Ticket
-6. 当前 Ticket 的 `Blocked by` 对应 summary 报告
-7. Ticket 中“必读源码”列出的生产代码和测试代码
+2. 根目录 `AGENTS.md`
+3. `.scratch/batch2-training-data-and-sampling/spec.md`
+4. `docs/development/batch2-training-data-and-sampling-tasks.md`
+5. `.scratch/batch2-training-data-and-sampling/FINAL_AUDIT_CONTRACTS.md`
+6. 本文件
+7. 当前 Ticket
+8. 当前 Ticket 的 `Blocked by` 对应 summary
+9. Ticket 中“必读源码”列出的生产代码和测试代码
 
-如果前置 Ticket 没有 summary、状态不是 resolved，或实际接口和当前 Ticket 假设不一致：
+若前置 Ticket 没有 summary、状态不是 resolved，或实际接口和当前 Ticket 假设不一致：
 
 ```text
 停止编码
 → 在当前 Ticket Comments 或 summary 草稿中记录阻断
 → 不自行重写前置模块
 ```
+
+### 1.1 冲突优先级
+
+```text
+当前源码事实
+→ FINAL_AUDIT_CONTRACTS.md
+→ 当前 Ticket
+→ 正式详细设计
+→ Agent 自行判断
+```
+
+源码与最终审计契约冲突时，标记 `blocked-source-contract-mismatch`，不得擅自选一边实现。
 
 ---
 
@@ -41,7 +55,8 @@
 - 现有类、函数、参数和返回值；
 - 调用方与被调用方；
 - 当前测试入口；
-- 与 Ticket 假设不一致的地方。
+- 与 Ticket 假设不一致的地方；
+- 当前 `--options-json`、Unicode 路径和 legacy 行为是否相关。
 
 禁止仅根据设计文档猜测源码。
 
@@ -52,8 +67,9 @@
 - 正确性功能：先写会失败的单元测试；
 - 兼容改造：先记录旧路径基线；
 - 新模块：先创建最小导入、构造和边界测试；
-- 多进程改造：先验证单线程，再验证多 CLI / spawn；
-- 文档任务：先核对代码默认值和真实命令。
+- 多进程改造：先验证纯函数/单线程，再验证多 CLI / spawn；
+- 文档任务：先核对代码默认值、真实命令和验收报告；
+- 路径或文件任务：先增加中文、空格和非 ASCII 测试。
 
 ### Step C：只建立最小接口
 
@@ -78,6 +94,7 @@
 → 边界条件
 → fallback / error
 → 日志和统计
+→ Unicode/UTF-8
 → 性能与内存检查
 ```
 
@@ -89,14 +106,16 @@
 
 - 新功能关闭时旧分支仍执行；
 - 参数缺失时旧行为不变；
+- 无 `--options-json` 时旧交互不变；
 - 输出数量、顺序、shape、dtype 不变；
 - 异常没有被新 fallback 吞掉；
 - 不生成额外必需文件；
-- 不修改模型、optimizer、DFM、Merge 格式。
+- 不修改模型、optimizer、DFM、Merge 或 `faceset.pak` 格式；
+- 普通英文路径和中文路径都能使用。
 
 ### Step F：生成 summary
 
-必须按 Ticket 指定路径生成 summary，不能只在提交信息里写“done”。
+必须按 Ticket 指定路径生成 summary，不能只在提交信息里写“done”。summary 末尾必须包含 `FINAL_AUDIT_CONTRACTS.md` 要求的合规表。
 
 ---
 
@@ -105,12 +124,21 @@
 ### 3.1 Python 与依赖
 
 - 最低 Python 3.9。
-- 不使用 3.10+ 才有的语法，除非已有项目已使用并有兼容处理。
+- 不使用 3.10+ 才有的语法，除非项目已有兼容处理。
 - 不新增大型依赖。
 - 优先使用项目现有 NumPy、OpenCV、Pathlib、dataclass/Enum 和 unittest 风格。
 - Metadata、Sampling 模块不得导入 TensorFlow。
 
-### 3.2 范围控制
+### 3.2 Unicode 与文件 I/O
+
+- 路径必须支持中文、空格和非 ASCII 字符。
+- 图像路径读写使用项目 `core.cv2ex` 或既有 `Sample.load_bgr()`，不新增原生 OpenCV 路径缺陷。
+- 文本显式 `encoding="utf-8"`。
+- JSON 使用 `ensure_ascii=False` 和 `allow_nan=False`。
+- 不批量输出用户私有样本路径。
+- Stable Sample Identity 必须遵守最终审计中的 NFC/collision 规则。
+
+### 3.3 范围控制
 
 禁止：
 
@@ -121,11 +149,10 @@
 - 自动删除、移动、重命名 aligned 图片；
 - 引入动态 Loss sampler；
 - 引入脸型 Loss、Shape Template 或 Shape-aware Merge；
-- 为“代码更漂亮”改变 legacy 随机语义。
+- 为“代码更漂亮”改变 legacy 随机语义；
+- 顺带修改 Lion、FP16 或 BF16 路线。
 
-### 3.3 错误与 fallback
-
-可选增强错误和核心训练错误必须分开。
+### 3.4 错误与 fallback
 
 允许 fallback：
 
@@ -139,13 +166,14 @@
 不得 fallback 掩盖：
 
 - faceset 没有训练数据；
+- 用户输入路径本身无效；
 - SampleProcessor 错误；
 - TensorFlow 错误；
 - 模型加载/保存错误；
-- 用户路径参数错误；
-- 多进程 worker 持续崩溃。
+- 多进程 worker 持续崩溃；
+- 损坏的 `--options-json` 被误判为 Metadata missing。
 
-### 3.4 数值安全
+### 3.5 数值安全
 
 所有外部或配置数值必须：
 
@@ -156,21 +184,23 @@ parse
 → explicit fallback reason
 ```
 
-禁止把 NaN / Inf 写入 JSON、概率或权重数组。
+禁止把 NaN / Inf 写入 JSON、概率或权重数组。算法常量和 golden values 以 `FINAL_AUDIT_CONTRACTS.md` 为准。
 
-### 3.5 多进程安全
+### 3.6 多进程安全
 
-- Windows 使用 spawn；入口必须受 `if __name__ == "__main__"` 或现有 main 入口保护。
+- Windows 使用 spawn；入口必须受安全 main 入口保护。
 - 不在 worker 中重复读取大 JSON。
 - 不把不可 pickle 对象传给 subprocess。
-- queue 请求必须有明确响应，不能出现永久等待。
+- queue 请求必须有明确响应、fatal、closed 和 timeout 语义。
 - 小 faceset、异常 worker 和进程退出都必须有测试。
+- Host 确定性边界和性能门槛以最终审计为准。
 
-### 3.6 确定性
+### 3.7 确定性
 
 - 新采样逻辑使用独立 `np.random.RandomState(seed)`。
 - 不污染 NumPy 全局随机状态。
-- 同输入、同配置、同 seed 的纯函数和 Host 测试必须可复现。
+- 同输入、同配置、同 seed、同请求顺序必须可复现。
+- 不宣称不同 OS 并发调度下 worker 对应 batch 完全一致。
 - legacy 未指定 seed 时不得强制改变历史行为。
 
 ---
@@ -188,6 +218,8 @@ parse
 
 不要使用裸 dict 在多个模块间传递复杂状态。优先定义轻量 dataclass、NamedTuple 或明确类。
 
+后续 Ticket 只能依赖前置 summary 明确公开的接口，不得依赖私有字段或测试实现。
+
 ---
 
 ## 5. 测试执行要求
@@ -199,16 +231,23 @@ python -m compileall <本 ticket 修改的 Python 文件或目录>
 python -m unittest <本 ticket 对应测试模块>
 ```
 
-若仓库已有 Batch 1/2 smoke runner，应同时执行相关 runner。
+若仓库已有 smoke runner，应同时执行相关 runner。
 
 测试必须区分：
 
 - PASS：实际执行并通过；
-- SKIP：依赖缺失且有明确原因；
-- PENDING：只能在 Windows GPU 执行；
+- SKIP-DEPENDENCY：依赖缺失且有明确原因；
+- PENDING-WINDOWS：只能在 Windows/GPU 执行；
+- BLOCKED-BY-*：被已知问题阻断；
 - FAIL：实际失败，不能包装成 warning 后声称完成。
 
-禁止使用大范围 `except Exception: pass` 让测试假成功。
+禁止：
+
+- 大范围 `except Exception: pass`；
+- 测试全部 skip 后标 resolved；
+- 只跑 compileall；
+- 只验证英文路径；
+- 用 mock 替代 Ticket 明确要求的真实 Packed、spawn 或 GPU 链路。
 
 ---
 
@@ -228,6 +267,8 @@ fix(batch2): ...
 test(batch2): ...
 docs(batch2): ...
 ```
+
+Ticket 09、10 完成后必须安排独立强模型或人工 code review。
 
 ---
 
@@ -259,13 +300,15 @@ docs(batch2): ...
 
 ## 5. 测试
 - 命令
-- PASS / SKIP / PENDING / FAIL
+- PASS / SKIP-DEPENDENCY / PENDING-WINDOWS / FAIL
 - 关键输出
 
 ## 6. 旧行为回归
 - 新功能关闭
 - legacy 输出契约
-- 普通 / Packed
+- ordinary / Packed
+- Unicode / UTF-8
+- --options-json（适用时）
 
 ## 7. 未完成与风险
 - Windows / GPU 项
@@ -275,6 +318,9 @@ docs(batch2): ...
 ## 8. 下一 Ticket 使用说明
 - 可依赖接口
 - 不可依赖的内部实现
+
+## 9. 最终审计契约合规
+- 按 FINAL_AUDIT_CONTRACTS.md 的表格填写
 ```
 
 ---
@@ -287,10 +333,13 @@ docs(batch2): ...
 - 前置 Ticket 接口缺失；
 - 必须修改 SAEHD Loss 才能完成当前 Ticket；
 - 必须修改 `faceset.pak` 格式；
-- ordinary 与 packed 无法使用同一 sample identity；
+- ordinary 与 Packed 无法使用同一 sample identity；
 - 为通过测试必须吞掉核心错误；
 - Windows spawn 无法复现或无法安全退出；
-- legacy 行为无法在测试中保持。
+- legacy 行为无法保持；
+- Unicode canonicalization 产生未处理 collision；
+- `--options-json` 与交互配置优先级无法按契约实现；
+- 量化性能门槛失败且原因未知。
 
 正确行为是记录 `blocked`、证据和最小建议，不是擅自重构全项目。
 
@@ -308,6 +357,10 @@ docs(batch2): ...
 对应测试实际通过
 +
 旧行为回归有证据
++
+Unicode/UTF-8 合规（适用时）
++
+最终审计契约合规表已填写
 +
 summary 已生成
 +

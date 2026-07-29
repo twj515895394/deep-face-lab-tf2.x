@@ -5,6 +5,11 @@ from facelib import FaceType
 from core.interact import interact as io
 
 
+def _opt_label(key, en, zh):
+    """交互菜单展示：编号 + 中文 + 英文键名（内部逻辑仍用英文键）。"""
+    return f"({key}) {zh} ({en})"
+
+
 class MergerConfig(object):
     TYPE_NONE = 0
     TYPE_MASKED = 1
@@ -21,7 +26,9 @@ class MergerConfig(object):
                        ):
         self.type = type
 
+        # 内部标识保持英文，供滤波逻辑使用；展示用 sharpen_zh_dict
         self.sharpen_dict = {0:"None", 1:'box', 2:'gaussian'}
+        self.sharpen_zh_dict = {0:"无", 1:"方框锐化", 2:"高斯锐化"}
 
         #default changeable params
         self.sharpen_mode = sharpen_mode
@@ -32,14 +39,17 @@ class MergerConfig(object):
 
     #overridable
     def ask_settings(self):
-        s = """Choose sharpen mode: \n"""
+        s = "选择锐化模式 (Choose sharpen mode):\n"
         for key in self.sharpen_dict.keys():
-            s += f"""({key}) {self.sharpen_dict[key]}\n"""
+            s += _opt_label(key, self.sharpen_dict[key], self.sharpen_zh_dict[key]) + "\n"
         io.log_info(s)
-        self.sharpen_mode = io.input_int ("", 0, valid_list=self.sharpen_dict.keys(), help_message="Enhance details by applying sharpen filter.")
+        self.sharpen_mode = io.input_int ("", 0, valid_list=self.sharpen_dict.keys(),
+                                          help_message="通过锐化滤镜增强细节 (Enhance details by applying sharpen filter).")
 
         if self.sharpen_mode != 0:
-            self.blursharpen_amount = np.clip ( io.input_int ("Choose blur/sharpen amount", 0, add_info="-100..100"), -100, 100 )
+            self.blursharpen_amount = np.clip (
+                io.input_int ("选择模糊/锐化程度 (Choose blur/sharpen amount)", 0, add_info="-100..100"),
+                -100, 100 )
 
     def toggle_sharpen_mode(self):
         a = list( self.sharpen_dict.keys() )
@@ -67,10 +77,12 @@ class MergerConfig(object):
     #overridable
     def to_string(self, filename):
         r = ""
-        r += f"sharpen_mode : {self.sharpen_dict[self.sharpen_mode]}\n"
-        r += f"blursharpen_amount : {self.blursharpen_amount}\n"
+        zh = self.sharpen_zh_dict.get(self.sharpen_mode, "")
+        r += f"锐化模式 sharpen_mode : {zh} ({self.sharpen_dict[self.sharpen_mode]})\n"
+        r += f"模糊/锐化程度 blursharpen_amount : {self.blursharpen_amount}\n"
         return r
 
+# 内部 mode 值必须保持英文：MergeMasked / 会话恢复 / 热键逻辑依赖这些字符串
 mode_dict = {0:'original',
              1:'overlay',
              2:'hist-match',
@@ -78,6 +90,14 @@ mode_dict = {0:'original',
              4:'seamless-hist-match',
              5:'raw-rgb',
              6:'raw-predict'}
+
+mode_zh_dict = {0:'原始',
+                1:'叠加',
+                2:'直方图匹配',
+                3:'无缝',
+                4:'无缝+直方图匹配',
+                5:'原始RGB',
+                6:'原始预测'}
 
 mode_str_dict = { mode_dict[key] : key for key in mode_dict.keys() }
 
@@ -93,8 +113,20 @@ mask_mode_dict = {0:'full',
                   9:'learned-prd*learned-dst*XSeg-prd*XSeg-dst'
                   }
 
+mask_mode_zh_dict = {0:'全图',
+                     1:'目标脸',
+                     2:'学习遮罩(预测)',
+                     3:'学习遮罩(目标)',
+                     4:'学习遮罩(预测*目标)',
+                     5:'学习遮罩(预测+目标)',
+                     6:'XSeg(预测)',
+                     7:'XSeg(目标)',
+                     8:'XSeg(预测*目标)',
+                     9:'学习遮罩*XSeg 全组合'
+                     }
 
 ctm_dict = { 0: "None", 1:"rct", 2:"lct", 3:"mkl", 4:"mkl-m", 5:"idt", 6:"idt-m", 7:"sot-m", 8:"mix-m" }
+ctm_zh_dict = { 0: "无", 1:"RCT", 2:"LCT", 3:"MKL", 4:"MKL-M", 5:"IDT", 6:"IDT-M", 7:"SOT-M", 8:"MIX-M" }
 ctm_str_dict = {None:0, "rct":1, "lct":2, "mkl":3, "mkl-m":4, "idt":5, "idt-m":6, "sot-m":7, "mix-m":8 }
 
 class MergerConfigMasked(MergerConfig):
@@ -189,9 +221,9 @@ class MergerConfigMasked(MergerConfig):
         self.bicubic_degrade_power = np.clip ( self.bicubic_degrade_power+diff, 0, 100)
 
     def ask_settings(self):
-        s = """Choose mode: \n"""
+        s = "选择合并模式 (Choose mode):\n"
         for key in mode_dict.keys():
-            s += f"""({key}) {mode_dict[key]}\n"""
+            s += _opt_label(key, mode_dict[key], mode_zh_dict[key]) + "\n"
         io.log_info(s)
         mode = io.input_int ("", mode_str_dict.get(self.default_mode, 1) )
 
@@ -199,36 +231,62 @@ class MergerConfigMasked(MergerConfig):
 
         if 'raw' not in self.mode:
             if self.mode == 'hist-match':
-                self.masked_hist_match = io.input_bool("Masked hist match?", True)
+                self.masked_hist_match = io.input_bool("是否使用遮罩区域直方图匹配？ (Masked hist match?)", True)
 
             if self.mode == 'hist-match' or self.mode == 'seamless-hist-match':
-                self.hist_match_threshold = np.clip ( io.input_int("Hist match threshold", 255, add_info="0..255"), 0, 255)
+                self.hist_match_threshold = np.clip (
+                    io.input_int("直方图匹配阈值 (Hist match threshold)", 255, add_info="0..255"),
+                    0, 255)
 
-        s = """Choose mask mode: \n"""
+        s = "选择遮罩模式 (Choose mask mode):\n"
         for key in mask_mode_dict.keys():
-            s += f"""({key}) {mask_mode_dict[key]}\n"""
+            s += _opt_label(key, mask_mode_dict[key], mask_mode_zh_dict[key]) + "\n"
         io.log_info(s)
         self.mask_mode = io.input_int ("", 1, valid_list=mask_mode_dict.keys() )
 
         if 'raw' not in self.mode:
-            self.erode_mask_modifier = np.clip ( io.input_int ("Choose erode mask modifier", 0, add_info="-400..400"), -400, 400)
-            self.blur_mask_modifier =  np.clip ( io.input_int ("Choose blur mask modifier", 0, add_info="0..400"), 0, 400)
-            self.motion_blur_power = np.clip ( io.input_int ("Choose motion blur power", 0, add_info="0..100"), 0, 100)
+            self.erode_mask_modifier = np.clip (
+                io.input_int ("选择遮罩边缘侵蚀值 (Choose erode mask modifier)", 0, add_info="-400..400"),
+                -400, 400)
+            self.blur_mask_modifier =  np.clip (
+                io.input_int ("选择遮罩边缘模糊值 (Choose blur mask modifier)", 0, add_info="0..400"),
+                0, 400)
+            self.motion_blur_power = np.clip (
+                io.input_int ("选择运动模糊强度 (Choose motion blur power)", 0, add_info="0..100"),
+                0, 100)
 
-        self.output_face_scale = np.clip (io.input_int ("Choose output face scale modifier", 0, add_info="-50..50" ), -50, 50)
+        self.output_face_scale = np.clip (
+            io.input_int ("选择输出人脸缩放比例 (Choose output face scale modifier)", 0, add_info="-50..50" ),
+            -50, 50)
 
         if 'raw' not in self.mode:
-            self.color_transfer_mode = io.input_str ( "Color transfer to predicted face", None, valid_list=list(ctm_str_dict.keys())[1:] )
+            # 输入仍用英文简写（rct/lct/...），与 ctm_str_dict 及历史会话兼容
+            ctm_help = "可选: " + ", ".join(
+                f"{k}={ctm_zh_dict[ctm_str_dict[k]]}" for k in list(ctm_str_dict.keys())[1:]
+            )
+            io.log_info(f"颜色迁移算法说明 (Color transfer): {ctm_help}")
+            self.color_transfer_mode = io.input_str (
+                "预测脸的颜色迁移方式 (Color transfer to predicted face)",
+                None, valid_list=list(ctm_str_dict.keys())[1:] )
             self.color_transfer_mode = ctm_str_dict[self.color_transfer_mode]
 
         super().ask_settings()
 
-        self.super_resolution_power = np.clip ( io.input_int ("Choose super resolution power", 0, add_info="0..100", help_message="Enhance details by applying superresolution network."), 0, 100)
+        self.super_resolution_power = np.clip (
+            io.input_int ("选择超分辨率增强强度 (Choose super resolution power)", 0, add_info="0..100",
+                          help_message="通过超分辨率网络增强细节 (Enhance details by applying superresolution network)."),
+            0, 100)
 
         if 'raw' not in self.mode:
-            self.image_denoise_power = np.clip ( io.input_int ("Choose image degrade by denoise power", 0, add_info="0..500"), 0, 500)
-            self.bicubic_degrade_power = np.clip ( io.input_int ("Choose image degrade by bicubic rescale power", 0, add_info="0..100"), 0, 100)
-            self.color_degrade_power = np.clip (  io.input_int ("Degrade color power of final image", 0, add_info="0..100"), 0, 100)
+            self.image_denoise_power = np.clip (
+                io.input_int ("选择图像降噪退化强度 (Choose image degrade by denoise power)", 0, add_info="0..500"),
+                0, 500)
+            self.bicubic_degrade_power = np.clip (
+                io.input_int ("选择双三次缩放退化强度 (Choose image degrade by bicubic rescale power)", 0, add_info="0..100"),
+                0, 100)
+            self.color_degrade_power = np.clip (
+                io.input_int ("最终图像颜色退化强度 (Degrade color power of final image)", 0, add_info="0..100"),
+                0, 100)
 
         io.log_info ("")
 
@@ -254,36 +312,40 @@ class MergerConfigMasked(MergerConfig):
         return False
 
     def to_string(self, filename):
+        mode_key = mode_str_dict.get(self.mode)
+        mode_zh = mode_zh_dict.get(mode_key, "") if mode_key is not None else ""
         r = (
-            f"""MergerConfig {filename}:\n"""
-            f"""Mode: {self.mode}\n"""
+            f"合并配置 MergerConfig {filename}:\n"
+            f"合并模式 Mode: {mode_zh} ({self.mode})\n"
             )
 
         if self.mode == 'hist-match':
-            r += f"""masked_hist_match: {self.masked_hist_match}\n"""
+            r += f"遮罩直方图匹配 masked_hist_match: {self.masked_hist_match}\n"
 
         if self.mode == 'hist-match' or self.mode == 'seamless-hist-match':
-            r += f"""hist_match_threshold: {self.hist_match_threshold}\n"""
+            r += f"直方图匹配阈值 hist_match_threshold: {self.hist_match_threshold}\n"
 
-        r += f"""mask_mode: { mask_mode_dict[self.mask_mode] }\n"""
-
-        if 'raw' not in self.mode:
-            r += (f"""erode_mask_modifier: {self.erode_mask_modifier}\n"""
-                  f"""blur_mask_modifier: {self.blur_mask_modifier}\n"""
-                  f"""motion_blur_power: {self.motion_blur_power}\n""")
-
-        r += f"""output_face_scale: {self.output_face_scale}\n"""
+        r += (f"遮罩模式 mask_mode: {mask_mode_zh_dict.get(self.mask_mode, '')} "
+              f"({mask_mode_dict[self.mask_mode]})\n")
 
         if 'raw' not in self.mode:
-            r += f"""color_transfer_mode: {ctm_dict[self.color_transfer_mode]}\n"""
+            r += (f"遮罩侵蚀 erode_mask_modifier: {self.erode_mask_modifier}\n"
+                  f"遮罩模糊 blur_mask_modifier: {self.blur_mask_modifier}\n"
+                  f"运动模糊 motion_blur_power: {self.motion_blur_power}\n")
+
+        r += f"输出脸缩放 output_face_scale: {self.output_face_scale}\n"
+
+        if 'raw' not in self.mode:
+            r += (f"颜色迁移 color_transfer_mode: "
+                  f"{ctm_zh_dict.get(self.color_transfer_mode, '')} ({ctm_dict[self.color_transfer_mode]})\n")
             r += super().to_string(filename)
 
-        r += f"""super_resolution_power: {self.super_resolution_power}\n"""
+        r += f"超分辨率强度 super_resolution_power: {self.super_resolution_power}\n"
 
         if 'raw' not in self.mode:
-            r += (f"""image_denoise_power: {self.image_denoise_power}\n"""
-                  f"""bicubic_degrade_power: {self.bicubic_degrade_power}\n"""
-                  f"""color_degrade_power: {self.color_degrade_power}\n""")
+            r += (f"降噪退化 image_denoise_power: {self.image_denoise_power}\n"
+                  f"双三次退化 bicubic_degrade_power: {self.bicubic_degrade_power}\n"
+                  f"颜色退化 color_degrade_power: {self.color_degrade_power}\n")
 
         r += "================"
 
@@ -305,7 +367,9 @@ class MergerConfigFaceAvatar(MergerConfig):
 
     #override
     def ask_settings(self):
-        self.add_source_image = io.input_bool("Add source image?", False, help_message="Add source image for comparison.")
+        self.add_source_image = io.input_bool(
+            "是否添加源图对比？ (Add source image?)", False,
+            help_message="添加源图像以便对比 (Add source image for comparison).")
         super().ask_settings()
 
     def toggle_add_source_image(self):
@@ -323,7 +387,7 @@ class MergerConfigFaceAvatar(MergerConfig):
 
     #override
     def to_string(self, filename):
-        return (f"MergerConfig {filename}:\n"
-                f"add_source_image : {self.add_source_image}\n") + \
+        return (f"合并配置 MergerConfig {filename}:\n"
+                f"添加源图对比 add_source_image : {self.add_source_image}\n") + \
                 super().to_string(filename) + "================"
 

@@ -245,7 +245,7 @@ def dev_test_68(input_dir ):
 
         pts_filepath = filepath.parent / (filepath.stem+'.pts')
         if pts_filepath.exists():
-            pts = pts_filepath.read_text()
+            pts = pts_filepath.read_text(encoding='utf-8')
             pts_lines = pts.split('\n')
 
             lmrk_lines = None
@@ -313,7 +313,7 @@ def extract_umd_csv(input_file_csv,
         output_path.mkdir(parents=True, exist_ok=True)
 
     try:
-        with open( str(input_file_csv_path), 'r') as f:
+        with open( str(input_file_csv_path), 'r', encoding='utf-8') as f:
             csv_file = f.read()
     except Exception as e:
         io.log_err("Unable to open or read file " + str(input_file_csv_path) + ": " + str(e) )
@@ -396,7 +396,7 @@ def dev_test1(input_dir):
         
         #img = cv2_imread(filepath)
         
-        lm = landmark_filepath.read_text()
+        lm = landmark_filepath.read_text(encoding='utf-8')
         lm = lm.split('\n')
         if int(lm[0]) != 106:
             raise ValueError(f'wrong landmarks format in {landmark_filepath}')
@@ -554,7 +554,7 @@ def dev_test(input_dir):
                 print(f'{image_filepath} does not exist, skipping') 
                 
             lmrks = []
-            for lmrk_line in filepath.read_text().split('\n'):
+            for lmrk_line in filepath.read_text(encoding='utf-8').split('\n'):
                 if len(lmrk_line) == 0:
                     continue
                     

@@ -7,8 +7,16 @@ if __name__ == "__main__":
     nn.initialize_main_env()
     import os
     import sys
+    import io as sys_io
     import time
     import argparse
+
+    if sys.platform == 'win32':
+        if hasattr(sys.stdout, 'buffer'):
+            sys.stdout = sys_io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        if hasattr(sys.stderr, 'buffer'):
+            sys.stderr = sys_io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 
     from core import pathex
     from core import osex

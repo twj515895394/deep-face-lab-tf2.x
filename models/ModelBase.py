@@ -477,9 +477,10 @@ class ModelBase(object):
         return self.preview_history_writer
 
     def save(self):
-        Path( self.get_summary_path() ).write_text( self.get_summary_text() )
+        Path( self.get_summary_path() ).write_text( self.get_summary_text(), encoding='utf-8' )
 
         self.onSave()
+
 
         sample_for_preview_save = None
         if self.sample_for_preview is not None:

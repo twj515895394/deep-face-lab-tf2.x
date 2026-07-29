@@ -54,6 +54,7 @@ class SampleLoader:
         """
         Return MPSharedList of samples
         """
+        samples_path = Path(samples_path)
         samples_cache = SampleLoader.samples_cache
 
         if str(samples_path) not in samples_cache.keys():
@@ -71,7 +72,7 @@ class SampleLoader:
                 try:
                     result = samplelib.PackedFaceset.load(samples_path)
                 except:
-                    io.log_err(f"Error occured while loading samplelib.PackedFaceset.load {str(samples_dat_path)}, {traceback.format_exc()}")
+                    io.log_err(f"Error occured while loading samplelib.PackedFaceset.load {str(samples_path)}, {traceback.format_exc()}")
 
                 if result is not None:
                     io.log_info (f"Loaded {len(result)} packed faces from {samples_path}")

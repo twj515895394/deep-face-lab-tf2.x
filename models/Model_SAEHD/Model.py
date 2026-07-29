@@ -1,3 +1,4 @@
+import copy
 import multiprocessing
 import operator
 import os
@@ -365,6 +366,34 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
 
             self.options['eyes_mouth_prio'] = io.input_bool ("Eyes and mouth priority", default_eyes_mouth_prio, help_message='Helps to fix eye problems during training like "alien eyes" and wrong eyes direction. Also makes the detail of the teeth higher.')
             self.options['uniform_yaw'] = io.input_bool ("Uniform yaw distribution of samples", default_uniform_yaw, help_message='Helps to fix blurry side faces due to small amount of them in the faceset.')
+
+            if ENHANCEMENTS_AVAILABLE and self.enhancements is not None:
+                current_meta_sampling = self.enhancements.is_enabled("training.metadata_sampling")
+                enable_meta_sampling = io.input_bool ("Enable metadata sampling?", current_meta_sampling, help_message="Use faceset_metadata.v1.json to enable pose-balanced or quality-aware sampling.")
+
+                current_sampling_dict = self.enhancements.sampling_config.to_dict()
+                if enable_meta_sampling:
+                    current_mode = current_sampling_dict.get("mode", "quality_pose_balanced")
+                    if current_mode == "legacy":
+                        current_mode = "quality_pose_balanced"
+                    mode_choices = ["legacy", "pose_balanced", "quality_pose_balanced"]
+                    chosen_mode = io.input_str ("Sampling mode", current_mode, mode_choices, help_message="legacy: standard random/uniform_yaw. pose_balanced: weight rare head poses. quality_pose_balanced: weight pose + image quality.").lower()
+                    if chosen_mode in mode_choices:
+                        current_sampling_dict["mode"] = chosen_mode
+                else:
+                    current_sampling_dict["mode"] = "legacy"
+
+                training_dict = copy.deepcopy(self.enhancements.to_dict().get("training", {}))
+                training_dict["enabled"] = enable_meta_sampling
+                training_dict["metadata_sampling"] = enable_meta_sampling
+
+                updated_dict = self.enhancements.to_dict()
+                updated_dict["training"] = training_dict
+                updated_dict["sampling"] = current_sampling_dict
+
+                self.enhancements = normalize_enhancement_config(updated_dict)
+                self.options["enhancements"] = self.enhancements.to_dict()
+
             self.options['blur_out_mask'] = io.input_bool ("Blur out mask", default_blur_out_mask, help_message='Blurs nearby area outside of applied face mask of training samples. The result is the background near the face is smoothed and less noticeable on swapped face. The exact xseg mask in src and dst faceset is required.')
 
         default_gan_power          = self.options['gan_power']          = self.load_or_def_option('gan_power', 0.0)
@@ -1150,18 +1179,46 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
             if not self._has_eyes_mouth:
                 io.log_info('EYES_MOUTH mask output disabled (saves IPC bandwidth)')
 
+            from samplelib.sampling.runtime import build_sampling_runtime
+
+            src_seed = self.options.get("seed", 42)
+            dst_seed = src_seed
+
+            src_runtime = build_sampling_runtime(
+                role="src",
+                samples_path=training_data_src_path,
+                enhancement_config=self.enhancements if ENHANCEMENTS_AVAILABLE else normalize_enhancement_config(None),
+                legacy_uniform_yaw=self.options['uniform_yaw'] or self.pretrain,
+                base_seed=src_seed,
+            )
+
+            dst_runtime = build_sampling_runtime(
+                role="dst",
+                samples_path=training_data_dst_path,
+                enhancement_config=self.enhancements if ENHANCEMENTS_AVAILABLE else normalize_enhancement_config(None),
+                legacy_uniform_yaw=self.options['uniform_yaw'] or self.pretrain,
+                base_seed=dst_seed,
+            )
+
+            self.src_sampling_runtime = src_runtime
+            self.dst_sampling_runtime = dst_runtime
+
             self.set_training_data_generators ([
                     SampleGeneratorFace(training_data_src_path, random_ct_samples_path=random_ct_samples_path, debug=self.is_debug(), batch_size=self.get_batch_size(),
                         sample_process_options=SampleProcessor.Options(scale_range=[-0.15, 0.15], random_flip=random_src_flip),
                         output_sample_types = _base_src_types,
                         uniform_yaw_distribution=self.options['uniform_yaw'] or self.pretrain,
-                        generators_count=src_generators_count ),
+                        generators_count=src_generators_count,
+                        sampling_policy=src_runtime.policy,
+                        sampling_role="src" ),
 
                     SampleGeneratorFace(training_data_dst_path, debug=self.is_debug(), batch_size=self.get_batch_size(),
                         sample_process_options=SampleProcessor.Options(scale_range=[-0.15, 0.15], random_flip=random_dst_flip),
                         output_sample_types = _base_dst_types,
                         uniform_yaw_distribution=self.options['uniform_yaw'] or self.pretrain,
-                        generators_count=dst_generators_count )
+                        generators_count=dst_generators_count,
+                        sampling_policy=dst_runtime.policy,
+                        sampling_role="dst" )
                              ])
 
             if self.pretrain_just_disabled:
@@ -1209,15 +1266,19 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
             ['out_face_mask','out_celeb_face','out_celeb_face_mask']
         )
 
-        import tf2onnx
-        with tf.device("/CPU:0"):
-            model_proto, _ = tf2onnx.convert._convert_common(
-                output_graph_def,
-                name='SAEHD',
-                input_names=['in_face:0'],
-                output_names=['out_face_mask:0','out_celeb_face:0','out_celeb_face_mask:0'],
-                opset=12,
-                output_path=output_path)
+        try:
+            import tf2onnx
+            with tf.device("/CPU:0"):
+                model_proto, _ = tf2onnx.convert._convert_common(
+                    output_graph_def,
+                    name='SAEHD',
+                    input_names=['in_face:0'],
+                    output_names=['out_face_mask:0','out_celeb_face:0','out_celeb_face_mask:0'],
+                    opset=12,
+                    output_path=output_path)
+        except ImportError as e:
+            io.log_err(f"Failed to export DFM: {e}. Please ensure 'tf2onnx' and 'tensorflow' are installed in python environment.")
+            return
 
     #override
     def get_model_filename_list(self):

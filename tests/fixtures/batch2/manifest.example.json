@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "description": "Batch 2 Test Fixtures & Environment Manifest Example",
+  "fixtures": {
+    "ordinary_faceset_dir": "tests/fixtures/batch2/data/ordinary",
+    "packed_faceset_file": "tests/fixtures/batch2/data/packed/faceset.pak"
+  },
+  "environment": {
+    "min_python_version": "3.9",
+    "required_packages": ["numpy", "cv2", "tensorflow"]
+  }
+}

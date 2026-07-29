@@ -48,11 +48,14 @@
 
 ## 5. 测试与完成状态
 
+> **macOS 本地开发/测试特别规范（仅限 macOS 开发测试环境，不得用于线上部署）**：  
+> Agent 在 macOS 环境下执行 Python 编译检查、运行脚本及单元测试时，**必须统一使用项目根目录下的虚拟环境可执行文件 `./.venv/bin/python`**，严禁直接调用全局或系统 Python，防止污染全局环境或引发包依赖报错。
+
 至少执行：
 
 ```bash
-python -m compileall <changed paths>
-python -m unittest <relevant tests>
+./.venv/bin/python -m compileall <changed paths>
+./.venv/bin/python -m unittest <relevant tests>
 ```
 
 状态必须使用明确证据：

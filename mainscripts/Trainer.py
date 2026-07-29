@@ -13,6 +13,7 @@ from core import imagelib
 import cv2
 import models
 from core.interact import interact as io
+from samplelib.sampling.loss_stats import compute_loss_window_stats
 
 def trainerThread (s2c, c2s, e,
                     model_class_name = None,
@@ -74,6 +75,8 @@ def trainerThread (s2c, c2s, e,
             shared_state = { 'after_save' : False }
             loss_string = ""
             save_iter =  model.get_iter()
+            loss_window_start_index = len(model.get_loss_history())
+
             def model_save():
                 if not debug and not is_reached_goal:
                     io.log_info ("Saving....", end='\r')
@@ -159,17 +162,18 @@ def trainerThread (s2c, c2s, e,
                         if shared_state['after_save']:
                             shared_state['after_save'] = False
                             
-                            # 直接使用最近的损失值，而不是计算平均值
-                            if len(loss_history) > 0:
-                                # 使用最近的损失值
+                            stats = compute_loss_window_stats(loss_history, loss_window_start_index)
+                            if stats is not None:
+                                mean_loss = stats.mean
+                                loss_window_start_index = len(loss_history)
+                            elif len(loss_history) > 0:
                                 latest_loss = loss_history[-1]
-                                # 确保是可迭代对象
                                 if not hasattr(latest_loss, '__iter__') or isinstance(latest_loss, (np.number, float, int)):
                                     mean_loss = [latest_loss]
                                 else:
                                     mean_loss = latest_loss
                             else:
-                                mean_loss = [0.0]  # 确实没有损失数据时使用默认值
+                                mean_loss = [0.0]
 
                             for loss_value in mean_loss:
                                 loss_string += "[%.4f]" % (loss_value)

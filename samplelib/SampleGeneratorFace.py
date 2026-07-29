@@ -27,13 +27,17 @@ class SampleGeneratorFace(SampleGeneratorBase):
                         output_sample_types=[],
                         uniform_yaw_distribution=False,
                         generators_count=4,
-                        raise_on_no_data=True,                        
+                        raise_on_no_data=True,
+                        sampling_policy=None,
+                        sampling_role=None,
                         **kwargs):
 
         super().__init__(debug, batch_size)
         self.initialized = False
         self.sample_process_options = sample_process_options
         self.output_sample_types = output_sample_types
+        self.sampling_policy = sampling_policy
+        self.sampling_role = sampling_role
         
         if self.debug:
             self.generators_count = 1
@@ -49,7 +53,9 @@ class SampleGeneratorFace(SampleGeneratorBase):
             else:
                 return
                 
-        if uniform_yaw_distribution:
+        if self.sampling_policy is not None:
+            index_host = self.sampling_policy.build_index_host(samples, role=sampling_role)
+        elif uniform_yaw_distribution:
             samples_pyr = [ ( idx, sample.get_pitch_yaw_roll() ) for idx, sample in enumerate(samples) ]
             
             grads = 128

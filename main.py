@@ -354,6 +354,33 @@ if __name__ == "__main__":
         XSegUtil.fetch_xseg (Path(arguments.input_dir) )
     p.add_argument('--input-dir', required=True, action=fixPathAction, dest="input_dir")
     p.set_defaults (func=process_xsegfetch)
+
+    # ========== Faceset Analyzer (Batch 2)
+    def process_faceset_analyze(arguments):
+        osex.set_process_lowest_prio()
+        from mainscripts import FacesetAnalyzer
+        global exit_code
+        exit_code = FacesetAnalyzer.main(
+            input_dir=Path(arguments.input_dir),
+            output_file=Path(arguments.output_file) if arguments.output_file else None,
+            report_file=Path(arguments.report_file) if arguments.report_file else None,
+            incremental=arguments.incremental,
+            force=arguments.force,
+            workers=arguments.workers,
+            strong_fingerprint=arguments.strong_fingerprint,
+            strict=arguments.strict,
+        )
+
+    p = subparsers.add_parser("faceset-analyze", help="Analyze faceset for landmark integrity, pose buckets, and quality scores.")
+    p.add_argument('--input-dir', required=True, action=fixPathAction, dest="input_dir", help="Input directory containing aligned faces or faceset.pak.")
+    p.add_argument('--output-file', action=fixPathAction, dest="output_file", default=None, help="Output metadata file path. Default: <input-dir>/faceset_metadata.v1.json")
+    p.add_argument('--report-file', action=fixPathAction, dest="report_file", default=None, help="Output machine report JSON path. Default: <input-dir>/faceset_metadata_report.v1.json")
+    p.add_argument('--incremental', action="store_true", dest="incremental", default=False, help="Reuse previous valid metadata metrics for unchanged samples.")
+    p.add_argument('--force', action="store_true", dest="force", default=False, help="Force full analysis, bypassing incremental cache.")
+    p.add_argument('--workers', type=int, dest="workers", default=None, help="Number of worker processes.")
+    p.add_argument('--strong-fingerprint', action="store_true", dest="strong_fingerprint", default=False, help="Use full sha256 byte hashing for sample signatures.")
+    p.add_argument('--strict', action="store_true", dest="strict", default=False, help="Exit with error if any invalid/corrupted samples are found.")
+    p.set_defaults(func=process_faceset_analyze)
     
     def bad_args(arguments):
         parser.print_help()

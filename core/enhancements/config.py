@@ -10,6 +10,9 @@ import warnings
 from typing import Any, Dict, Mapping, Optional
 
 
+from samplelib.sampling.config import SamplingConfig
+
+
 SUPPORTED_SCHEMA_VERSION = 1
 
 
@@ -33,6 +36,7 @@ DEFAULT_ENHANCEMENT_CONFIG = {
         "fallback_on_optional_error": True,
         "strict_validation": False,
     },
+    "sampling": SamplingConfig().to_dict(),
 }
 
 
@@ -57,12 +61,14 @@ class EnhancementConfig:
         training: Optional[Mapping[str, Any]] = None,
         merge: Optional[Mapping[str, Any]] = None,
         runtime: Optional[Mapping[str, Any]] = None,
+        sampling: Optional[Mapping[str, Any]] = None,
         extra_fields: Optional[Mapping[str, Any]] = None,
     ):
         self.schema_version = schema_version
         self._training = copy.deepcopy(DEFAULT_ENHANCEMENT_CONFIG["training"])
         self._merge = copy.deepcopy(DEFAULT_ENHANCEMENT_CONFIG["merge"])
         self._runtime = copy.deepcopy(DEFAULT_ENHANCEMENT_CONFIG["runtime"])
+        self._sampling_config = SamplingConfig.from_mapping(sampling)
         self._extra_fields = copy.deepcopy(dict(extra_fields or {}))
         self._unsupported_schema = schema_version > SUPPORTED_SCHEMA_VERSION
 
@@ -99,7 +105,7 @@ class EnhancementConfig:
             except (TypeError, ValueError):
                 schema_version = SUPPORTED_SCHEMA_VERSION
 
-            known = {"schema_version", "training", "merge", "runtime"}
+            known = {"schema_version", "training", "merge", "runtime", "sampling"}
             extra_fields = {
                 key: copy.deepcopy(value)
                 for key, value in raw_mapping.items()
@@ -110,6 +116,7 @@ class EnhancementConfig:
                 training=raw_mapping.get("training"),
                 merge=raw_mapping.get("merge"),
                 runtime=raw_mapping.get("runtime"),
+                sampling=raw_mapping.get("sampling"),
                 extra_fields=extra_fields,
             )
         except Exception:
@@ -130,6 +137,10 @@ class EnhancementConfig:
     @property
     def strict_validation(self) -> bool:
         return bool(self._runtime.get("strict_validation", False))
+
+    @property
+    def sampling_config(self) -> SamplingConfig:
+        return self._sampling_config
 
     def is_enabled(self, path: str) -> bool:
         if self._unsupported_schema or not isinstance(path, str) or not path:
@@ -153,6 +164,7 @@ class EnhancementConfig:
             "training": copy.deepcopy(self._training),
             "merge": copy.deepcopy(self._merge),
             "runtime": copy.deepcopy(self._runtime),
+            "sampling": self._sampling_config.to_dict(),
         }
         result.update(copy.deepcopy(self._extra_fields))
         return result

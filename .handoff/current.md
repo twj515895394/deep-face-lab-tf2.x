@@ -1,55 +1,50 @@
 # 当前项目交接入口
 
 > 本文件是新会话、新 Agent 和后续开发者的固定入口。  
-> 更新时间：2026-07-26  
-> 当前交接编号：H-010
+> 更新时间：2026-07-29  
+> 当前交接编号：H-012
 
 请先阅读最新交接文档：
 
-- [Ticket 11 Batch 1 兼容矩阵与 handoff 汇总：handoff-20260726-203448.md](handoff-20260726-203448.md)
+- [Issue 15 全项目中文路径兼容 + 预览列数可配置化 + Merger 中文化需求：handoff-20260729-113305.md](handoff-20260729-113305.md)
 
 然后继续阅读：
 
-1. [Ticket 09 训练保存恢复 smoke](handoff-20260726-201010.md)
-2. [Ticket 07 Finite Gradient Gate 与 Loss Scaling](handoff-20260726-195000.md)
-3. [Ticket 06 Lion v2 与 Legacy State](handoff-20260726-184945.md)
-4. [Ticket 05/10 Optimizer Roundtrip 与 Merge Smoke](handoff-20260726-181947.md)
-5. [Ticket 04/08 Precision 与 Feature Flag](handoff-20260726-174706.md)
-6. [Ticket 03 训练异常语义](handoff-20260726-165523.md)
-7. [Batch 1 首轮实现与 Ticket 化](handoff-20260726-161235.md)
-8. [Batch 1 详细设计补齐](handoff-20260726-batch1-detailed-design.md)
-9. [首次完整项目交接](handoff-20260726-initial-project-state.md)
-10. [Batch 1 ticket 总入口](../.scratch/batch1-correctness-foundation/spec.md)
-11. [Batch 1：P0 正确性与扩展安全骨架详细设计](../docs/development/batch1-correctness-and-extension-foundation-tasks.md)
-12. [文档总索引](../docs/README.md)
-13. [Enhanced DFL 统一实施总计划](../docs/implementation/enhanced-dfl-master-implementation-plan.md)
-14. [训练正确性审计规范](../docs/optimization/training-correctness-audit.md)
-15. [开发验证与人工质量验收标准](../docs/implementation/manual-quality-acceptance-and-development-validation-standard.md)
+1. [Issue 15 中文路径前一轮交接](handoff-20260728-161030.md)
+2. [Ticket 11 Batch 1 兼容矩阵与 handoff 汇总](handoff-20260726-203448.md)
+3. [Ticket 09 训练保存恢复 smoke](handoff-20260726-201010.md)
+4. [Ticket 07 Finite Gradient Gate 与 Loss Scaling](handoff-20260726-195000.md)
+5. [Ticket 06 Lion v2 与 Legacy State](handoff-20260726-184945.md)
+6. [Ticket 05/10 Optimizer Roundtrip 与 Merge Smoke](handoff-20260726-181947.md)
+7. [Ticket 04/08 Precision 与 Feature Flag](handoff-20260726-174706.md)
+8. [Ticket 03 训练异常语义](handoff-20260726-165523.md)
+9. [Batch 1 首轮实现与 Ticket 化](handoff-20260726-161235.md)
+10. [Batch 1 详细设计补齐](handoff-20260726-batch1-detailed-design.md)
+11. [首次完整项目交接](handoff-20260726-initial-project-state.md)
+12. [Batch 1 ticket 总入口](../.scratch/batch1-correctness-foundation/spec.md)
+13. [Batch 1：P0 正确性与扩展安全骨架详细设计](../docs/development/batch1-correctness-and-extension-foundation-tasks.md)
+14. [文档总索引](../docs/README.md)
+15. [Enhanced DFL 统一实施总计划](../docs/implementation/enhanced-dfl-master-implementation-plan.md)
+16. [训练正确性审计规范](../docs/optimization/training-correctness-audit.md)
+17. [开发验证与人工质量验收标准](../docs/implementation/manual-quality-acceptance-and-development-validation-standard.md)
+18. [AGENTS.md 研发规范](../AGENTS.md)
 
 当前状态：
 
 ```text
-Batch 1 详细设计：已完成
-Batch 1 ticket 拆分：已完成
-Ticket 01 macOS 轻量 smoke harness：已完成
-Ticket 02 Eyes / Mouth Priority 真实 mask 修复：已完成
-Ticket 03 统一训练异常处理与失败语义：macOS 轻量验证已完成
-Ticket 04 Precision Contract 与 dtype 审计：macOS 轻量验证已完成
-Ticket 05 optimizer roundtrip 审计基础：macOS 轻量验证已完成
-Ticket 06 Lion v2 公式与 legacy state 保护：macOS 轻量验证已完成
-Ticket 07 finite gradient gate / Loss Scaling：macOS 轻量验证已完成
-Ticket 08 Enhancement Feature Flag 骨架：macOS 轻量验证已完成
-Ticket 09 保存恢复 smoke：macOS 轻量验证已完成
-Ticket 10 Merge 默认路径 smoke：macOS 轻量验证已完成
-Ticket 11 Batch 1 兼容矩阵与 handoff 汇总：macOS 轻量复核已完成
+Batch 1 全量 Ticket (01-11)：已完成（macOS 轻量验证已通过）
+Issue 15 全项目中文路径与 Unicode 编码兼容：已完成（80/80 smoke 测试通过）
+AGENTS.md 研发规范：已创建并沉淀（强制中文输入/路径/cv2ex/utf-8 规范）
 Python 基线：最低 3.9，推荐 3.11 / 3.12
-下一步：进入 Batch 2 前置设计 / 任务拆分；Windows GPU 真实验收仍需补证
+下一步：需求 A 训练预览列数可配置化 + 需求 B Merger 参数中文化
 ```
 
 当前下一步：
 
 ```text
-Batch 2 前置设计 / 任务拆分
+需求 A：训练预览界面列数可配置化（onGetPreview 中 resolution<=256 硬编码分支）
+需求 B：Merger 合并参数添加中文描述（MergerConfig.ask_settings 15+ 交互项）
+详见最新交接文档 handoff-20260729-113305.md 第 2 节。
 ```
 
 下一轮代码修改建议按 ticket 边界处理：

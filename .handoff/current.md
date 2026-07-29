@@ -24,7 +24,7 @@
 Round-4 开工前 Base：5fc3b9ee007ee771cfbb6ab77cc98f84bce11b7d
 Round-4 被审 R3 实现：7b482c9ced3631b7cde7dcdd3f07bff47ab28960
 Round-4 Review 文档：  420f15bd61d1fc76f607fb15720440f260699111
-Round-4 实现提交：    见本轮 push 后 HEAD（summary/handoff 同步）
+Round-4 实现提交：    b6b0e79d6866c089deff905e00bb900a58da547f
 ```
 
 施工 Summary 自审 `PASS` **不能**覆盖独立 Reviewer。当前权威状态：

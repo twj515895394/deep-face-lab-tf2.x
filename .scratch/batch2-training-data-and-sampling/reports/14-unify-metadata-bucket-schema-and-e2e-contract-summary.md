@@ -5,7 +5,7 @@
 > Base Commit（Round 4 开工前 HEAD）：`5fc3b9ee007ee771cfbb6ab77cc98f84bce11b7d`  
 > Round-4 被审实现（R3 落地）：`7b482c9ced3631b7cde7dcdd3f07bff47ab28960`  
 > Round-4 Review 文档：`420f15bd61d1fc76f607fb15720440f260699111`  
-> Head Commit（Round 4 实现）：见本提交后 `git rev-parse HEAD`（推送后写入 handoff）  
+> Head Commit（Round 4 实现）：`b6b0e79d6866c089deff905e00bb900a58da547f`  
 > 运行环境：Windows 11 / Python 3.11.7（pyenv）  
 > `--options-json` 文档同步：**NA**
 

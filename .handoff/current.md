@@ -2,33 +2,38 @@
 
 > 本文件是新会话、新 Agent 和后续开发者的固定入口。  
 > 更新时间：2026-07-29  
-> 当前交接编号：H-013 + Batch 2 Final Audit
+> 当前交接编号：H-014 + Batch 2 Options JSON Reference
 
-请先阅读最新主分支交接：
+请先阅读本分支最新交接：
+
+- [`--options-json` 训练配置权威参考交接](handoff-20260729-options-json-reference.md)
+
+主分支最近交接：
 
 - [预览阈值 400 + Merger 中文化落地：handoff-20260729-121246.md](handoff-20260729-121246.md)
 
 Batch 2 开发必须依次阅读：
 
-1. [Batch 2 Metadata 与 Sampling 详细设计交接](handoff-20260727-batch2-detailed-design.md)
-2. [Batch 2 ticket 总入口](../.scratch/batch2-training-data-and-sampling/spec.md)
-3. [Batch 2 正式详细设计](../docs/development/batch2-training-data-and-sampling-tasks.md)
-4. [Batch 2 最终审计补充契约](../.scratch/batch2-training-data-and-sampling/FINAL_AUDIT_CONTRACTS.md)
-5. [Batch 2 Agent 施工规范](../.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md)
-6. [Batch 2 首个 ticket：基线与 fixture](../.scratch/batch2-training-data-and-sampling/issues/01-baseline-and-fixtures.md)
+1. [根目录 AGENTS.md 研发规范](../AGENTS.md)
+2. [Batch 2 Metadata 与 Sampling 详细设计交接](handoff-20260727-batch2-detailed-design.md)
+3. [Batch 2 ticket 总入口](../.scratch/batch2-training-data-and-sampling/spec.md)
+4. [Batch 2 正式详细设计](../docs/development/batch2-training-data-and-sampling-tasks.md)
+5. [`--options-json` 训练配置权威参考](../docs/implementation/options-json-training-configuration-reference.md)
+6. [Batch 2 最终审计补充契约](../.scratch/batch2-training-data-and-sampling/FINAL_AUDIT_CONTRACTS.md)
+7. [Batch 2 Agent 施工规范](../.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md)
+8. [Batch 2 首个 ticket：基线与 fixture](../.scratch/batch2-training-data-and-sampling/issues/01-baseline-and-fixtures.md)
 
 其他重要交接与规范：
 
-1. [根目录 AGENTS.md 研发规范](../AGENTS.md)
-2. [Issue 15 全项目中文路径兼容 + 原需求 A/B 说明](handoff-20260729-113305.md)
-3. [Issue 15 中文路径前一轮交接](handoff-20260728-161030.md)
-4. [模型加载 OOM 修复 handoff](handoff-20260727-165500.md)
-5. [Ticket 11 Batch 1 兼容矩阵与 handoff 汇总](handoff-20260726-203448.md)
-6. [Batch 1 详细设计](../docs/development/batch1-correctness-and-extension-foundation-tasks.md)
-7. [Batch 1 ticket 总入口](../.scratch/batch1-correctness-foundation/spec.md)
-8. [文档总索引](../docs/README.md)
-9. [Enhanced DFL 统一实施总计划](../docs/implementation/enhanced-dfl-master-implementation-plan.md)
-10. [开发验证与人工质量验收标准](../docs/implementation/manual-quality-acceptance-and-development-validation-standard.md)
+1. [Issue 15 全项目中文路径兼容 + 原需求 A/B 说明](handoff-20260729-113305.md)
+2. [Issue 15 中文路径前一轮交接](handoff-20260728-161030.md)
+3. [模型加载 OOM 修复 handoff](handoff-20260727-165500.md)
+4. [Ticket 11 Batch 1 兼容矩阵与 handoff 汇总](handoff-20260726-203448.md)
+5. [Batch 1 详细设计](../docs/development/batch1-correctness-and-extension-foundation-tasks.md)
+6. [Batch 1 ticket 总入口](../.scratch/batch1-correctness-foundation/spec.md)
+7. [文档总索引](../docs/README.md)
+8. [Enhanced DFL 统一实施总计划](../docs/implementation/enhanced-dfl-master-implementation-plan.md)
+9. [开发验证与人工质量验收标准](../docs/implementation/manual-quality-acceptance-and-development-validation-standard.md)
 
 当前状态：
 
@@ -44,6 +49,7 @@ Batch 2 正式详细设计：已完成
 Batch 2 .scratch ticket 拆分：已完成（12 个 tickets）
 Batch 2 弱模型施工引导：已完成
 Batch 2 最终审计补充：已完成
+--options-json 权威参数文档：已创建（v1.0）
 Batch 2 运行时代码：未开始
 Batch 2 Windows FP32 验收：未开始
 
@@ -58,6 +64,7 @@ Batch 2 最终审计新增冻结内容：
 - Loader 状态优先级与 usable_for_sampling
 - training.enabled + metadata_sampling 双 gate
 - --options-json 嵌套配置形状和优先级
+- --options-json 参数文档同步规则
 - Pose/Quality golden values
 - WeightedIndexHost cycle、timeout、统计容差
 - Windows 性能量化验收门槛
@@ -98,7 +105,9 @@ Batch 2 已确定边界：
 执行规则：
 
 - 弱模型一次只领取一个 Ticket。
-- 每个 Ticket 必须同时提供当前 Ticket、Agent 规范、最终审计契约和前置 summary。
+- 每个 Ticket 必须同时提供当前 Ticket、AGENTS.md、Agent 规范、最终审计契约和前置 summary。
+- 涉及训练参数的 Ticket 必须同时阅读并同步 `docs/implementation/options-json-training-configuration-reference.md`。
+- 新增、删除、重命名或改变训练参数语义时，必须在同一提交/PR 更新权威参数文档、示例、变更记录和测试。
 - 不得直接跳到 WeightedIndexHost 或 SAEHD 接入。
 - 先固定 ordinary/Packed fixture、legacy 索引分布和 Generator tensor contract。
 - 所有新增能力默认关闭。

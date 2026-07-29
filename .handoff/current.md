@@ -1,42 +1,48 @@
 # 当前项目交接入口
 
 > 本文件是新会话、新 Agent 和后续开发者的固定入口。  
-> 更新时间：2026-07-29 23:14 +08:00  
-> 当前交接：Batch 2 Ticket 14 第二轮独立 Review 与剩余返修  
-> 当前状态：REVIEW-FAILED / TICKET14-NEAR-PASS / FIXES-REQUIRED / PENDING-WINDOWS-GPU
+> 更新时间：2026-07-29 23:26 +08:00  
+> 当前交接：Batch 2 Ticket 14 第三轮独立 Review 与剩余返修  
+> 当前状态：`REVIEW-FAILED / TICKET14-CLOSE-BUT-NOT-PASS / FIXES-REQUIRED / PENDING-WINDOWS-GPU`
 
 ---
 
-## 1. 最新交接
+## 1. 最新必读入口
 
-必须先阅读：
+按顺序阅读：
 
-1. [Ticket 14 第二轮独立 Review 与剩余返修要求](../.scratch/batch2-training-data-and-sampling/reports/14-unify-metadata-bucket-schema-and-e2e-contract-review-round2.md)
-2. [Ticket 14 第一轮独立 Review 与返修要求](../.scratch/batch2-training-data-and-sampling/reports/14-unify-metadata-bucket-schema-and-e2e-contract-review.md)
-3. [Ticket 14 当前实施 Summary](../.scratch/batch2-training-data-and-sampling/reports/14-unify-metadata-bucket-schema-and-e2e-contract-summary.md)
-4. [Ticket 14 施工规约](../.scratch/batch2-training-data-and-sampling/issues/14-unify-metadata-bucket-schema-and-e2e-contract.md)
-5. [Batch 2 独立 Review、Analyzer 使用说明与修复 Ticket 14—21](handoff-20260729-batch2-independent-review-remediation.md)
-6. [Batch 2 独立代码审查、问题汇总与修复总计划](../.scratch/batch2-training-data-and-sampling/reports/batch2-independent-code-review-and-remediation-plan.md)
-7. [Faceset Analyzer 完整使用说明](../docs/usage/faceset-analyzer-complete-guide.md)
+1. [Ticket 14 第三轮独立 Review 与剩余返修要求](../.scratch/batch2-training-data-and-sampling/reports/14-unify-metadata-bucket-schema-and-e2e-contract-review-round3.md)
+2. [Ticket 14 当前实施 Summary](../.scratch/batch2-training-data-and-sampling/reports/14-unify-metadata-bucket-schema-and-e2e-contract-summary.md)
+3. [Ticket 14 施工规约](../.scratch/batch2-training-data-and-sampling/issues/14-unify-metadata-bucket-schema-and-e2e-contract.md)
+4. [Ticket 14 第二轮独立 Review](../.scratch/batch2-training-data-and-sampling/reports/14-unify-metadata-bucket-schema-and-e2e-contract-review-round2.md)
+5. [Ticket 14 第一轮独立 Review](../.scratch/batch2-training-data-and-sampling/reports/14-unify-metadata-bucket-schema-and-e2e-contract-review.md)
+6. [Batch 2 独立 Review、Analyzer 使用说明与修复 Ticket 14—21](handoff-20260729-batch2-independent-review-remediation.md)
+7. [Batch 2 独立代码审查、问题汇总与修复总计划](../.scratch/batch2-training-data-and-sampling/reports/batch2-independent-code-review-and-remediation-plan.md)
+8. [Faceset Analyzer 完整使用说明](../docs/usage/faceset-analyzer-complete-guide.md)
 
-第二轮独立 Review 提交：
+第三轮被审返修 Commit：
 
 ```text
-973cc6a95e558e18633184066c8d3cf2a4a7f020
+18e3d74091cdb179b2410486b9da5f7dca2d3ca3
 ```
 
-Ticket 14 Summary 中的自审 `RESOLVED / PASS` 不能覆盖独立 Reviewer 结论。当前权威状态以第二轮独立 Review 为准：
+第三轮 Review 文档提交：
+
+```text
+436dfb2105d293ce4527661fc553cd114dd567f7
+```
+
+Ticket 14 Summary 中的自审 `RESOLVED / PASS` 不能覆盖独立 Reviewer 结论。当前权威状态为：
 
 ```text
 REQUEST_CHANGES
-NEAR-PASS
-CORE BUCKET MISMATCH FIXED
-ORDINARY SAMPLING EFFECT PROVEN
-SCHEMA CONTRACT NOT CLOSED
-PACKED FULL E2E NOT PROVEN
+CLOSE-BUT-NOT-PASS
+CORE ANALYZER→LOADER→POLICY PATH FIXED
+ORDINARY AND PACKED MAIN E2E ESTABLISHED
+WARNING BOUND CONTRACT STILL BROKEN
+BOOL-COMPATIBLE CONTRACT INCONSISTENT
+MANDATORY TICKET TEST MATRIX INCOMPLETE
 ```
-
-此前的综合 Review 报告和 Ticket 01—13 summary 仍保留为历史证据，但不能再单独作为“Batch 2 已完成”的依据。
 
 ---
 
@@ -50,99 +56,125 @@ Merger 参数双语：已完成
 模型加载 OOM / 分块 assign：已修复并验证
 
 Batch 2 Ticket 01—13：已有实现与轻量测试
-Batch 2 独立 Review：FAIL，发现 P0/P1 契约与多进程问题
-Ticket 14：ROUND-2 / NEAR-PASS / FIXES-REQUIRED
+Ticket 14：ROUND-3 / CLOSE-BUT-NOT-PASS / FIXES-REQUIRED
 Metadata Sampling：NOT PRODUCTION READY
 Windows spawn：未通过真实验收
 Windows FP32 + AdaBelief：PENDING
 Batch 3：BLOCKED BY BATCH 2 REMEDIATION
 ```
 
-### 2.1 Ticket 14 已确认通过
-
-```text
-Canonical yaw/pitch bucket 单一契约：PASS
-Analyzer canonical 输出 → Loader 固定 ID：PASS
-旧 rec.get("valid", True) 默认漏洞：已移除
-Analyzer bucket contract version 与 canonical lists：PASS
-Ordinary 多 yaw bucket fixture：PASS
-Ordinary 非均匀权重：PASS
-稀缺 bucket 权重高于热门 bucket：PASS
-pose_balance_strength=0 恢复等权：PASS
-Ordinary WeightedIndexHost 经验抽样：已建立
-Legacy alias / unknown 聚合 warning：已建立
-Unicode 目录与 Unicode 文件名：已进入 fixture
-Report 旧顶层 valid 读取：已移除
-```
-
-### 2.2 Ticket 14 剩余阻断
-
-```text
-Schema pose mapping 校验：未完成
-Schema pose.valid 类型校验：未完成
-Schema legacy alias issue 契约：未完成
-Loader metadata_valid 结构边界：仍需收紧
-Packed 至少两个有效 yaw bucket：未证明
-Packed probabilities → IndexHost → draw：未完成
-Packed empirical distribution：未完成
-Ordinary empirical test 的 uniform_mix：理论与实际配置需对齐
-compact array memory footprint 旧断言：需恢复
-legacy extreme → unknown / pose_valid=False 明确断言：需恢复
-warning examples <= 5 的真实断言：需补强
-不可变 before/after commit 与可复核测试证据：需补齐
-独立 Reviewer 最终 PASS：未签发
-```
-
-### 2.3 安全判断
+安全判断：
 
 ```text
 legacy_random：继续回归和使用
 legacy_uniform_yaw：继续回归和使用
 Faceset Analyzer：可用于报告与开发验证
-pose_balanced：Ticket 14—21 最终验收前不用于正式训练结论
-quality_pose_balanced：Ticket 14—21 最终验收前不用于正式训练结论
+pose_balanced：Ticket 14—20 完成前不用于正式训练结论
+quality_pose_balanced：Ticket 14—20 完成前不用于正式训练结论
 ```
 
 ---
 
-## 3. Batch 2 独立 Review 发现
+## 3. Ticket 14 已确认通过
 
-### 3.1 原始 P0 阻断
+```text
+Canonical yaw/pitch bucket 单一契约：PASS
+Analyzer canonical 输出 → Loader 固定 ID：PASS
+旧 rec.get("valid", True) 默认漏洞：已移除
+顶层 valid-only record：不再 metadata_valid
+Analyzer bucket contract version 与 canonical lists：PASS
+Ordinary 多 yaw bucket fixture：PASS
+Ordinary 非均匀权重：PASS
+稀缺 bucket 权重高于热门 bucket：PASS
+pose_balance_strength=0 恢复等权：PASS
+Ordinary empirical draw：已建立
+Packed Analyzer→Loader→Policy→IndexHost→draw：已建立
+uniform_mix empirical 基线：已对齐为 0.0
+Legacy extreme：unknown + pose invalid + warning
+Unicode 目录与 Unicode 文件名：已进入 fixture
+compact-array <2MB 旧断言：已恢复
+```
 
-1. Analyzer 与 Loader 的 yaw/pitch bucket 名称不一致；
-2. 旧使用指南的 options JSON 缺少顶层 `enhancements`；
-3. 旧示例没有同时开启 `training.enabled` 和 `metadata_sampling`；
-4. 文档宣称 `sampling.src/dst`，代码只解析扁平全局配置；
-5. WeightedIndexHostClient 在 Windows spawn 下存在 `_host_ref` 序列化风险。
-
-其中第 1 项的 canonical 名称断裂已经由 Ticket 14 主体返修关闭，但 Ticket 14 的 Schema 与 Packed 完整验收仍未闭环，因此 Ticket 14 尚未通过。
-
-### 3.2 P1 高优先级
-
-1. `--workers` 参数未实际使用；
-2. `--strong-fingerprint` 参数未实际使用；
-3. 同名替换图片可能继续使用旧 Metadata；
-4. Incremental summary 使用旧顶层字段；
-5. Loss Window 多包含保存后一个 batch；
-6. Optional fallback 可能吞掉 SampleLoader 核心异常。
+这些部分不得在下一轮重新设计或回退。
 
 ---
 
-## 4. 修复 Ticket 入口
+## 4. Ticket 14 剩余阻断
 
-按弱模型施工标准新增：
+### 4.1 RuntimeMetadata warnings 仍未有界
 
-1. [Ticket 14：统一 Metadata Bucket Schema 与端到端契约](../.scratch/batch2-training-data-and-sampling/issues/14-unify-metadata-bucket-schema-and-e2e-contract.md)
-   - [实施 Summary](../.scratch/batch2-training-data-and-sampling/reports/14-unify-metadata-bucket-schema-and-e2e-contract-summary.md)
-   - [第一轮独立 Review](../.scratch/batch2-training-data-and-sampling/reports/14-unify-metadata-bucket-schema-and-e2e-contract-review.md)
-   - [第二轮独立 Review](../.scratch/batch2-training-data-and-sampling/reports/14-unify-metadata-bucket-schema-and-e2e-contract-review-round2.md)
-2. [Ticket 15：修复 options-json 与 SRC/DST Sampling 配置](../.scratch/batch2-training-data-and-sampling/issues/15-fix-options-json-and-src-dst-sampling-contract.md)
-3. [Ticket 16：修复 WeightedIndexHost Windows spawn](../.scratch/batch2-training-data-and-sampling/issues/16-fix-weighted-index-host-windows-spawn.md)
-4. [Ticket 17：实现 Analyzer Workers、强指纹与 stale detection](../.scratch/batch2-training-data-and-sampling/issues/17-implement-analyzer-workers-strong-fingerprint-and-stale-detection.md)
-5. [Ticket 18：修复 Incremental Summary 与 Report Schema](../.scratch/batch2-training-data-and-sampling/issues/18-fix-incremental-summary-and-report-schema.md)
-6. [Ticket 19：修复 Loss Window 保存边界](../.scratch/batch2-training-data-and-sampling/issues/19-fix-loss-window-save-boundary-and-observability.md)
-7. [Ticket 20：收窄 Fallback 异常边界](../.scratch/batch2-training-data-and-sampling/issues/20-narrow-fallback-exception-boundaries.md)
-8. [Ticket 21：文档、Handoff 与 Windows GPU 最终验收](../.scratch/batch2-training-data-and-sampling/issues/21-docs-handoff-windows-gpu-final-acceptance.md)
+Loader 会把 `val_res.issues` 逐条追加为 `SCHEMA_ISSUE`。大规模 alias 或 invalid bucket 会产生与样本数量线性增长的 warnings。
+
+必须按 issue code 聚合，并限制 examples 和总 warning 数量。
+
+### 4.2 bool-compatible 契约不一致
+
+当前：
+
+```text
+Schema：所有 int 都视为 compatible
+Loader：val == 1 / val == 0，并会意外接受 1.0 / 0.0
+```
+
+必须由 Schema 与 Loader 共用同一 helper，并固定 `2/-1/1.0/空串/任意字符串` 等边界行为。
+
+### 4.3 metadata_valid 混合畸形 child
+
+当前只要 `pose/quality/image` 任意一个是 dict，就可能 metadata_valid。`pose="BROKEN" + quality={}` 仍会通过 record-level 判定。
+
+所有实际出现的已知 child 必须结构可解析。
+
+### 4.4 Ticket 明文自动测试仍缺失
+
+必须补齐：
+
+```text
+精确 yaw threshold：-0.8/-0.4/-0.15/0.15/0.4/0.8
+精确 pitch threshold：-0.15/0.15
+contracts alias/extreme/None/数字/空字符串/未知字符串
+Analyzer valid bucket canonical set
+Analyzer summary keys 精确集合
+Metadata JSON roundtrip bucket 不变
+Unicode filename 对应 record 精确断言
+Loader valid yaw IDs 全部 0..6
+Loader valid pitch IDs 全部 0..2
+LOADED 不等于所有 pose valid
+Packed reversed/shuffled sample order 语义不变
+```
+
+### 4.5 Packed/Ordinary 对照测试不自包含
+
+当前对照测试依赖其他测试先生成 sidecar，只要求至少一个 common filename，没有证明全部映射一致，也没有真正改变 sample order。
+
+### 4.6 Summary 不准确
+
+Summary 的 `1d03494 .. HEAD`、基线 `973cc6a`、验收项 `973cc6a .. HEAD` 三处不一致。
+
+第三轮实际返修范围：
+
+```text
+Base: 5609ddfaffa1281c9c4981367e35daeef22556b6
+Head: 18e3d74091cdb179b2410486b9da5f7dca2d3ca3
+```
+
+Summary 还需补 canonical ID 表、alias 表、实际函数、distribution 数值、未完成项和独立 Reviewer 结论。
+
+GitHub 当前没有该 Commit 的 Actions workflow run 或 status check；`195/195 PASS` 只能视为执行者本机日志摘录。
+
+---
+
+## 5. 当前 Ticket 依赖与 Frontier
+
+```text
+Ticket 14：ROUND-3 / FIXES-REQUIRED
+Ticket 15：BLOCKED-BY-14
+Ticket 16：BLOCKED-BY-14
+Ticket 17：BLOCKED-BY-14
+Ticket 18：BLOCKED-BY-14
+Ticket 20：BLOCKED-BY-14
+Ticket 21：BLOCKED-BY-14
+Ticket 19：允许另一个独立 Agent 并行
+```
 
 依赖关系：
 
@@ -168,32 +200,20 @@ quality_pose_balanced：Ticket 14—21 最终验收前不用于正式训练结�
 当前 frontier：
 
 ```text
-Ticket 14：第二轮剩余返修
-  ├── Schema contract
-  ├── Loader metadata_valid 结构边界
-  ├── Packed full E2E
-  ├── uniform_mix 测试一致性
-  └── 恢复并补强旧测试断言
-
-Ticket 19：允许另一个独立 Agent 并行
-
-Ticket 15 / 16 / 17 / 18 / 20 / 21：BLOCKED-BY-14
+Ticket 14 Round 3 剩余返修
+Ticket 19（可由另一个独立 Agent 并行）
 ```
 
 ---
 
-## 5. Ticket 14 下一轮施工边界
+## 6. 下一轮 Agent 施工范围
 
-下一轮只修复第二轮 Review 的剩余项，不得重新改动已经通过的 canonical bucket 主逻辑。
-
-允许修改：
+只允许修改：
 
 ```text
 samplelib/metadata/contracts.py
 samplelib/metadata/schema.py
 samplelib/metadata/loader.py
-samplelib/metadata/report.py（仅必要契约读取）
-tests/fixtures/batch2/build_synthetic_fixture.py
 tests/smoke/test_batch2_pose.py
 tests/smoke/test_batch2_analyzer_core.py
 tests/smoke/test_batch2_metadata_schema.py
@@ -202,101 +222,73 @@ tests/smoke/test_batch2_metadata_sampling_e2e.py
 Ticket 14 summary
 ```
 
-必须完成：
+不得重新修改已通过的 canonical bucket 主逻辑，不得进入：
 
 ```text
-1. Schema 对 pose 非 mapping 产生 INVALID_POSE_MAPPING
-2. Schema 对 pose.valid 非 bool 产生 INVALID_POSE_VALID_TYPE
-3. Schema 区分 canonical、legacy alias 和 unknown
-4. Loader 不得由旧顶层 valid 单独证明 metadata_valid
-5. Packed 执行 Analyzer → JSON → Loader → Policy → probabilities → IndexHost → draw
-6. Packed 证明至少两个有效 yaw bucket 和非均匀权重
-7. empirical expected distribution 与实际 uniform_mix 配置一致
-8. 恢复 compact memory footprint 断言
-9. 恢复 extreme → unknown / pose_valid=False 断言
-10. warning bounded 测试真实验证 examples <= 5
-11. Summary 记录完整、不可变 before/after commit SHA
-12. 独立 Reviewer 重新签发 APPROVED / PASS
+Ticket 15：SRC/DST config
+Ticket 16：Windows spawn
+Ticket 17：workers / strong fingerprint / stale signature
+Ticket 18：完整 Incremental 重构
+Ticket 20：fallback exception boundary
+SAEHD 网络 / Loss / optimizer / DFM / Merge / pak 格式
 ```
-
-不得：
-
-- 为通过测试把所有 bucket 强制映射为 center；
-- 用手工最终 Metadata 替代 Analyzer E2E；
-- 削弱或删除旧断言；
-- 顺手进入 Ticket 15、16、17、18、20；
-- 由施工 Agent 自己把 Ticket 14 标记为最终独立 PASS。
-
----
-
-## 6. Faceset Analyzer 使用结论
-
-Faceset Analyzer 不是所有训练都必须执行，也不等同于 XSeg。
-
-只有启用：
-
-```text
-pose_balanced
-quality_pose_balanced
-```
-
-才需要先分析 faceset。
-
-SRC 和 DST 需要分别分析，但同一个 aligned faceset 被多个模型复用时不需要重复分析。faceset 新增、删除、替换、重新 Extract/Align 或重新 Pack 后需要更新 Metadata。
-
-当前修复完成前：
-
-- Analyzer 可以生成 Metadata 和报告；
-- 不得仅凭 `effective: pose_balanced` 判断真实姿态采样生效；
-- Ordinary 测试证明不等于 Packed 与 Windows 正式验收完成；
-- 正式训练继续使用 legacy。
 
 ---
 
 ## 7. Agent 开工必读顺序
 
-任何 Agent 领取 Ticket 14—21 前必须依次阅读：
-
 1. 根目录 `AGENTS.md`
 2. 本 `.handoff/current.md`
-3. 最新 handoff
-4. `.scratch/batch2-training-data-and-sampling/spec.md`
-5. 独立 Review 总计划
-6. 当前 Ticket
-7. 当前 Ticket 已有 summary
-8. 当前 Ticket 所有独立 Review 报告
-9. 当前 Ticket 所有 `Blocked by` summary
-10. Ticket 指定的真实源码
-11. `docs/implementation/options-json-training-configuration-reference.md`（涉及训练配置时）
+3. Ticket 14 Round 3 Review
+4. Ticket 14 施工规约
+5. Ticket 14 当前 Summary
+6. `.scratch/batch2-training-data-and-sampling/spec.md`
+7. Ticket 指定的真实源码和测试
+8. 所有 Blocked-by 文档
 
-Ticket 14 返修 Agent 必须优先读取第二轮 Review，不得只读取实施 Summary，也不得只把 Ticket 标题发给弱模型。
+不得只把 Ticket 标题发给弱模型。
 
 ---
 
 ## 8. 执行规则
 
 - 弱模型一次只领取一个 Ticket；
-- Ticket 14 必须通过独立 Reviewer 后才能开始 15、16、17、18；
+- Ticket 14 必须先于 15、16、17、18、20、21；
 - Ticket 19 可独立并行；
-- Ticket 16、20 完成后必须强模型或人工独立 Review；
-- 每个高风险 Ticket 的施工 Agent 不得自行替代独立 Reviewer Gate；
-- Summary 中的自审 PASS 不覆盖独立 Review 的 REQUEST_CHANGES；
-- 测试必须走真实 Analyzer record，不得手工构造错误旧 Schema；
-- Ordinary 和 Packed 都必须执行到 WeightedIndexHost draw；
-- 多进程必须使用 spawn 测试和 `debug=False` Generator；
+- 测试必须走真实 Analyzer record；
 - 不得用 broad fallback 吞掉核心错误；
-- 不得修改 SAEHD 网络、Loss、optimizer、DFM、Merge 或 pak 格式；
+- 不得降低断言、依赖测试执行顺序或只增加测试数量；
 - 所有新增能力继续默认关闭；
 - macOS 轻量测试不能代替 Windows GPU；
-- 未执行 Windows 时不得写正式 done；
+- 未执行 Windows 时不得写正式 Batch 2 DONE；
 - 每个 Ticket 完成后必须生成同名 summary；
-- Review 失败后必须新增下一轮 Review 报告，不覆盖历史 Review 证据。
+- Summary 自审 PASS 不能代替独立 Reviewer Gate。
 
 ---
 
-## 9. 最终完成定义
+## 9. Ticket 14 最终通过条件
 
-Batch 2 只有同时满足以下条件才能重新签发 DONE：
+```text
+RuntimeMetadata schema warnings 按 code 聚合且有界
++
+Schema / Loader 共用 bool-compatible 契约
++
+metadata_valid 混合畸形 child 测试 PASS
++
+所有 Ticket 8.1—8.5 明文自动测试完成
++
+Packed 测试自包含且 sample order 语义不变
++
+Summary 使用不可变 Base/Head SHA 并记录 distribution 数值
++
+全量 smoke PASS 且旧测试未削弱
++
+独立 Reviewer APPROVED / PASS
+```
+
+---
+
+## 10. Batch 2 最终完成定义
 
 ```text
 Ticket 14—20 全部 PASS
@@ -338,9 +330,7 @@ PENDING-WINDOWS-GPU
 
 ---
 
-## 10. 历史 Batch 2 入口
-
-历史设计与实现仍需保留：
+## 11. 历史 Batch 2 入口
 
 - [Batch 2 详细设计](handoff-20260727-batch2-detailed-design.md)
 - [Ticket 01 基线](handoff-20260729-batch2-ticket01-baseline.md)
@@ -358,4 +348,4 @@ PENDING-WINDOWS-GPU
 - [Ticket 13 Loss Window](handoff-20260729-ticket13-loss-window-logging.md)
 - [`--options-json` 权威参考交接](handoff-20260729-options-json-reference.md)
 
-历史文档用于理解实现过程，不覆盖当前独立 Review 结论。
+历史文档用于理解实现过程，不覆盖当前第三轮独立 Review 结论。

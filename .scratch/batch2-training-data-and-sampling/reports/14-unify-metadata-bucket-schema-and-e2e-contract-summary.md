@@ -5,7 +5,7 @@
 > Base Commit（Round 3 开工前 HEAD）：`4ce52ce4d17f3daf64c74229564fc23bdc08e655`  
 > 被审 Round-2 返修 Commit：`18e3d74091cdb179b2410486b9da5f7dca2d3ca3`  
 > Round-3 Review 文档 Commit：`436dfb2105d293ce4527661fc553cd114dd567f7`  
-> Head Commit：工作区未提交；提交后请用不可变 SHA 替换本行  
+> Head Commit（Round 3 实现）：`7b482c9ced3631b7cde7dcdd3f07bff47ab28960`  
 > 运行环境：Windows 11 / Python 3.11.7（pyenv：`C:\Users\Administrator\.pyenv\pyenv-win\versions\3.11.7\python.exe`）  
 > `--options-json` 文档同步：**NA**（本轮未改训练配置参数）
 

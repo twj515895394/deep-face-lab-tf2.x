@@ -2,7 +2,8 @@
 
 > 时间：2026-07-29  
 > 分支：`codex/batch2-metadata-sampling-design`  
-> Base：`4ce52ce4d17f3daf64c74229564fc23bdc08e655`
+> Base：`4ce52ce4d17f3daf64c74229564fc23bdc08e655`  
+> Head：`7b482c9ced3631b7cde7dcdd3f07bff47ab28960`
 
 ## 结论
 

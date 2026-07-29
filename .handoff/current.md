@@ -26,7 +26,7 @@
 Round-3 开工前 Base：4ce52ce4d17f3daf64c74229564fc23bdc08e655
 Round-2 被审返修：  18e3d74091cdb179b2410486b9da5f7dca2d3ca3
 Round-3 Review 文档：436dfb2105d293ce4527661fc553cd114dd567f7
-Round-3 实现提交：  见本轮 push 后的 HEAD（summary 内同步）
+Round-3 实现提交：  7b482c9ced3631b7cde7dcdd3f07bff47ab28960
 ```
 
 Ticket 14 Summary 中的自审 `PASS` **不能**覆盖独立 Reviewer 结论。当前权威状态：

@@ -1,17 +1,16 @@
-# Batch 2 Training Data Metadata and Sampling
+# Batch 2 Training Data Metadata and Sampling — Remediation Spec
 
-Status: done-macos-lightweight-pending-windows
+Status: REVIEW-FAILED / FIXES-REQUIRED / PENDING-WINDOWS-GPU
 
-## 背景
+> 本文件是 Batch 2 当前权威任务入口。  
+> 原 Ticket 01—13 的实现与 summary 保留，但独立 Review 已证明其测试不足以签发正式完成。  
+> 当前必须执行修复 Ticket 14—21。
 
-本批次承接：
+---
 
-- `.handoff/current.md`
-- `docs/development/batch2-training-data-and-sampling-tasks.md`
-- `docs/implementation/enhanced-dfl-master-implementation-plan.md`
-- `docs/implementation/training-enhancement-implementation-plan.md`
+## 1. 背景
 
-本批次交付一套可独立长期使用的完整能力：
+Batch 2 原计划交付：
 
 ```text
 Faceset Analyzer
@@ -22,254 +21,440 @@ Pose-balanced Sampling
 +
 Quality + Pose Sampling
 +
-日志、报告和安全回退
+WeightedIndexHost / Multi-process Generator
++
+配置、日志、回退
++
+Loss Window 可观测性
 ```
 
-## Agent 执行入口
+Ticket 01—13 已有实现与 macOS 轻量测试，但 2026-07-29 独立代码 Review 发现端到端数据契约、配置、Windows spawn、增量报告、保存窗口和异常边界存在 P0/P1 问题。
 
-任何 Agent、Codex、Claude 或能力偏弱的编码模型领取 Ticket 前，必须依次阅读：
-
-1. `.handoff/current.md`
-2. 本 `spec.md`
-3. `docs/development/batch2-training-data-and-sampling-tasks.md`
-4. `.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md`
-5. 当前 Ticket
-6. 当前 Ticket 所有 `Blocked by` 对应 summary
-7. 当前 Ticket “Agent 开工前必读”中列出的源码
-
-不得只把当前 Ticket 标题和 checklist 发送给执行模型。任务上下文至少必须包含：
+当前结论：
 
 ```text
-当前 Ticket
-+
-AGENT_IMPLEMENTATION_GUIDE.md
-+
-前置 Ticket summary
-+
-相关源码文件
+Legacy paths：继续保护与回归
+Faceset Analyzer：可用于报告和开发验证
+Metadata Sampling：NOT PRODUCTION READY
+Windows GPU：PENDING
+Batch 3：BLOCKED
 ```
 
-若前置 summary 缺失、接口不一致或当前源码与 Ticket 假设冲突，Agent 必须标记 blocked，不得自行扩大重构范围。
+独立 Review：
 
-## 已确定决策
+- `.scratch/batch2-training-data-and-sampling/reports/batch2-independent-code-review-and-remediation-plan.md`
 
-- 正式训练基线固定为 FP32 + AdaBelief。
-- Lion 后续开发与验收暂停。
-- FP16 / BF16 不进入 Batch 2。
-- 动态单样本 Loss 感知采样延期到未来独立批次。
-- Identity Geometry、脸型 Loss、Source Shape Template 和 Shape-aware Merge 不进入 Batch 2。
-- 所有新增功能默认关闭。
-- Batch 2 完成后必须能作为正式功能继续使用，不允许只交付 Schema、接口或 TODO。
+完整用户说明：
 
-## 执行边界
+- `docs/usage/faceset-analyzer-complete-guide.md`
 
-本批次允许修改：
+---
 
-- `samplelib/metadata/*`
-- `samplelib/sampling/*`
-- `samplelib/SampleLoader.py`
-- `samplelib/SampleGeneratorFace.py`
-- `mainscripts/FacesetAnalyzer.py`
-- `core/enhancements/config.py`
-- `models/Model_SAEHD/Model.py`
-- `main.py`
-- `tests/*`
-- `docs/*`
-- `.handoff/*`
+## 2. Agent 执行入口
 
-本批次不得：
+任何 Agent、Codex、Claude 或能力偏弱的编码模型领取修复 Ticket 前，必须依次阅读：
 
-- 修改 SAEHD 网络和 Loss 公式；
-- 修改模型权重、optimizer、DFM 或 Merge 格式；
-- 自动删除或覆盖 aligned 图片；
-- 修改 `faceset.pak` 格式；
-- 把动态 Loss 状态写入 Metadata；
-- 引入大型外部质量模型；
-- 在同一 ticket 中顺带开发 Batch 3 / 4 / 5 / 6 功能；
-- 为通过测试吞掉核心训练、SampleProcessor、TensorFlow、save/load 错误；
-- 只做导入或语法检查就把功能标记 resolved。
+1. `AGENTS.md`
+2. `.handoff/current.md`
+3. `.handoff/handoff-20260729-batch2-independent-review-remediation.md`
+4. 本 `spec.md`
+5. 独立 Review 总计划
+6. `.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md`
+7. `.scratch/batch2-training-data-and-sampling/FINAL_AUDIT_CONTRACTS.md`
+8. 当前 Ticket
+9. 当前 Ticket 所有 `Blocked by` summary
+10. Ticket 指定的真实源码
+11. 涉及配置时阅读 `docs/implementation/options-json-training-configuration-reference.md`
 
-## Ticket 质量标准
+不得只提供 Ticket 标题或 checklist。
 
-每个 Ticket 已按弱模型执行要求包含：
-
-- 开工前必读文档和源码；
-- 当前源码事实检查；
-- 推荐对象/API 骨架；
-- 分步骤施工顺序；
-- 边界、fallback 和禁止捷径；
-- 可复制或可调整的测试命令；
-- 验收证据和 summary 交接要求。
-
-执行模型必须按 Ticket 顺序完成，不得跳过前置纯函数/基线任务，直接进入高风险运行时改造。
-
-## 通用完成定义
-
-单个 Ticket 只有同时满足以下条件才可从 open 改为 resolved：
+弱模型开工前必须先输出源码事实复核：
 
 ```text
-前置依赖已完成
+当前字段与调用链
+当前测试是否走真实路径
+当前实现与 Ticket 假设的冲突
+计划修改文件
+明确不修改文件
+legacy 保护点
+异常边界
+测试步骤
+```
+
+---
+
+## 3. 已冻结决策
+
+- 正式训练验收固定 FP32 + AdaBelief；
+- Lion 不进入本批；
+- FP16/BF16 不进入正式验收；
+- 动态 Loss-aware Sampling 延期；
+- Identity Geometry、Source Shape Template、Shape-aware Merge 不进入本批；
+- 所有增强默认关闭；
+- 不修改 SAEHD 网络或 Loss 公式；
+- 不修改 checkpoint、optimizer、DFM、Merge 或 `faceset.pak` 格式；
+- Metadata 不写回图片；
+- 不自动删除样本；
+- Windows 以 spawn 为准；
+- optional Metadata 可回退，核心错误必须抛出；
+- macOS synthetic 测试不能代替 Windows GPU；
+- Batch 3 在 Ticket 21 完成前 blocked。
+
+---
+
+## 4. 独立 Review 阻断问题
+
+### P0
+
+1. Analyzer 与 Loader 的 yaw/pitch bucket 名称不一致；
+2. 旧使用指南配置没有顶层 `enhancements`；
+3. 旧示例没有同时开启 `training.enabled` 与 `metadata_sampling`；
+4. 文档宣称 `sampling.src/dst`，代码只解析扁平配置；
+5. WeightedIndexHostClient 在 Windows spawn 下有 `_host_ref` pickle 风险。
+
+### P1
+
+1. `--workers` 参数未实际使用；
+2. `--strong-fingerprint` 参数未实际使用；
+3. 同名替换图片可能继续 trusted；
+4. Incremental summary 使用旧顶层字段；
+5. Loss Window 多统计保存后一个 batch；
+6. Fallback 捕获范围可能吞 SampleLoader 核心错误；
+7. 文档夸大支持模型和 options-json 文件能力；
+8. `.handoff/current.md` 曾含冲突标记和互相矛盾状态。
+
+---
+
+## 5. 执行边界
+
+允许修改：
+
+```text
+samplelib/metadata/*
+samplelib/sampling/*
+samplelib/SampleLoader.py
+samplelib/SampleGeneratorFace.py
+mainscripts/FacesetAnalyzer.py
+mainscripts/Trainer.py
+core/enhancements/config.py
+core/joblib/SubprocessGenerator.py（仅 Ticket 16 必要范围）
+models/Model_SAEHD/Model.py
+models/ModelBase.py（仅配置警告、资源关闭等批准范围）
+main.py
+tests/*
+docs/*
+.scratch/batch2-training-data-and-sampling/*
+.handoff/*
+```
+
+禁止：
+
+- SAEHD 网络/Loss 改造；
+- 新优化器；
+- 动态 Loss-aware Sampling；
+- Identity Geometry；
+- Merge 改造；
+- pak 格式变更；
+- GUI 或服务化；
+- broad fallback 掩盖核心错误；
+- 通过降低测试断言迎合错误实现；
+- 通过手工旧 Schema Fixture 代替真实 Analyzer；
+- 通过 debug=True 代替多进程；
+- 仅文档或 compileall 即标 resolved。
+
+---
+
+## 6. 修复 Ticket
+
+### Ticket 14 — Schema 与 E2E
+
+- `issues/14-unify-metadata-bucket-schema-and-e2e-contract.md`
+- P0；无前置；阻塞 15/16/17/18/20/21。
+
+### Ticket 15 — 配置契约
+
+- `issues/15-fix-options-json-and-src-dst-sampling-contract.md`
+- 前置 14；阻塞 20/21。
+
+### Ticket 16 — Windows spawn
+
+- `issues/16-fix-weighted-index-host-windows-spawn.md`
+- 前置 14；高风险；阻塞 20/21。
+
+### Ticket 17 — Workers / Fingerprint / Stale
+
+- `issues/17-implement-analyzer-workers-strong-fingerprint-and-stale-detection.md`
+- 前置 14；阻塞 18/20/21。
+
+### Ticket 18 — Incremental / Report
+
+- `issues/18-fix-incremental-summary-and-report-schema.md`
+- 前置 14、17；阻塞 21。
+
+### Ticket 19 — Loss Window Boundary
+
+- `issues/19-fix-loss-window-save-boundary-and-observability.md`
+- 无前置，可独立并行；阻塞 21。
+
+### Ticket 20 — Fallback Boundary
+
+- `issues/20-narrow-fallback-exception-boundaries.md`
+- 前置 15、16、17；高风险；阻塞 21。
+
+### Ticket 21 — Docs / Handoff / Windows GPU Final
+
+- `issues/21-docs-handoff-windows-gpu-final-acceptance.md`
+- 前置 14—20 全部 PASS；最终签发门。
+
+---
+
+## 7. 依赖与 Frontier
+
+```text
+14
+├── 15
+├── 16
+└── 17
+     ↓
+18
+
+19 可由独立 Agent 并行
+
+15 + 16 + 17
+     ↓
+20
+
+14—20 全部 PASS
+     ↓
+21
+```
+
+当前 frontier：
+
+```text
+Ticket 14
+Ticket 19（可并行）
+```
+
+禁止：
+
+- 跳过 14 直接做 15/16/17/18；
+- 让同一弱模型并行 16 与 20；
+- 在前置 summary 缺失时开始后续 Ticket；
+- 在 21 之前启动 Batch 3 正式代码开发。
+
+---
+
+## 8. 通用完成定义
+
+单个 Ticket 只有同时满足以下条件才可 resolved：
+
+```text
+前置依赖 PASS
 +
 源码事实复核有记录
 +
-实现严格在 Ticket 范围内
+实现严格在范围内
 +
 对应自动测试实际通过
 +
-legacy/关闭路径回归有证据
+legacy 关闭路径回归
++
+Unicode/UTF-8 验证
 +
 summary 已生成
 +
-Windows/GPU 未执行项明确标记
+Windows 未执行项明确
++
+独立 Review（高风险 Ticket）
 ```
 
 以下不算完成：
 
-- 只创建文件或接口；
-- 只通过 `compileall`；
-- 测试被全部 skip；
-- 只有 synthetic 测试但 Ticket 要求 Windows spawn/GPU；
+- 只创建接口；
+- 只通过 compileall；
+- 测试全部 skip；
+- 只测纯函数但 Ticket 要求时序/进程；
+- 只测 debug=True；
+- 只测主进程；
+- 通过 fallback 让测试不崩；
 - 未生成 summary；
-- 通过 fallback 掩盖核心错误；
-- 文档声称完成但没有 commit、命令或日志依据。
+- 没有 commit 和命令证据；
+- 文档声称完成但 Windows 未运行。
 
-## 平台验证约定
+---
 
-### macOS / CPU 轻量验证
+## 9. 测试分层
 
-可完成：
+### Layer 0：纯函数
 
-- Python 3.9+ 语法和导入；
-- Schema、identity、fingerprint、pose、quality 纯函数；
-- synthetic image Analyzer；
-- JSON 原子写入和增量更新；
-- policy / weights / deterministic host；
-- 普通和小型 Packed fixture；
-- 不依赖真实 GPU 的 Generator 结构测试。
+- bucket；
+- config；
+- signature；
+- weights/probabilities；
+- Loss Window；
+- exception classification。
 
-不得把以下内容写成已完成：
+### Layer 1：组件
 
-- Windows 多进程 spawn 全链路；
-- 真实 FP32 SAEHD GPU 训练；
-- 保存退出恢复；
-- 真实训练速度和显存；
-- 最终采样效果人工判断。
+- Analyzer；
+- Loader；
+- Incremental；
+- Policy；
+- Host；
+- Store；
+- Report。
 
-### Windows GPU 验收
-
-必须使用 FP32 + AdaBelief，完成：
-
-- legacy_random；
-- legacy_uniform_yaw；
-- pose_balanced；
-- quality_pose_balanced；
-- 普通与 Packed Faceset；
-- Metadata 部分缺失、损坏和 fallback；
-- 多进程 generator；
-- 保存、退出、恢复；
-- 实际采样分布和 iter time 记录。
-
-## Ticket Frontier
-
-优先领取所有前置依赖已完成的 issue。
-
-当前 frontier：
-
-- `01-baseline-and-fixtures.md`
-
-后续依赖顺序：
+### Layer 2：真实 E2E CPU
 
 ```text
-01
-↓
-02
-↓
-03
-↓
-04
-↓
-05
-↓
-06
-├─→ 07
-└─→ 08
-     ↓
-     09
-     ↓
-     10
-     ↓
-     11
-     ↓
-     12
+Fixture
+→ Analyzer
+→ Sidecar
+→ Loader
+→ Policy
+→ Host
+→ Draw
 ```
 
-禁止跳过 01-08，直接让弱模型修改 Ticket 09/10 的 Generator 或 SAEHD 接线。
+Ordinary/Packed 都必须覆盖。
 
-## Issues
-
-- `01-baseline-and-fixtures.md`
-- `02-sample-identity-and-metadata-schema.md`
-- `03-lightweight-faceset-analyzer-core.md`
-- `04-analyzer-cli-atomic-store-and-incremental.md`
-- `05-metadata-loader-folder-packed-compat.md`
-- `06-sampling-policy-and-legacy-adapters.md`
-- `07-pose-balanced-sampling.md`
-- `08-quality-aware-weighting.md`
-- `09-weighted-index-host-and-generator-integration.md`
-- `10-config-saehd-logging-and-fallback.md`
-- `11-batch2-test-matrix-and-windows-acceptance.md`
-- `12-compatibility-docs-and-handoff.md`
-
-## 完成总结报告约定
-
-每个 issue 完成后必须在：
+### Layer 3：Spawn
 
 ```text
-.scratch/batch2-training-data-and-sampling/reports/
+multiprocessing.get_context("spawn")
 ```
 
-生成同名 summary，至少记录：
+Client pickle、child draw、多 child、close/fatal/timeout、debug=False Generator。
 
-- 实际修改文件和函数；
-- 新增/修改接口；
-- 参数、默认值和输出字段；
-- 自动测试命令与 PASS / SKIP / PENDING / FAIL；
-- 人工验证步骤；
-- 未完成的 Windows / GPU 项；
-- 兼容和回退证据；
-- 风险与下一 ticket 建议；
-- 下一 Ticket 可依赖的公共接口；
-- 下一 Ticket 不应依赖的内部实现。
+### Layer 4：SAEHD 初始化
 
-summary 模板以：
+options-json、双 Gate、side config、startup log、fallback/strict、legacy。
+
+### Layer 5：Windows GPU
+
+FP32 + AdaBelief、四种 mode、Ordinary/Packed、save/exit/resume、采样分布、性能。
+
+---
+
+## 10. 平台状态
+
+macOS/CPU 可以签发：
 
 ```text
-.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md
+PASS-MACOS-LIGHTWEIGHT
+PASS-SPAWN-SIMULATION
 ```
 
-为准。
+不能签发：
 
-## 弱模型执行建议
+```text
+PASS-WINDOWS-GPU
+DONE
+```
 
-给能力较弱的模型分配任务时：
+Windows GPU 必须实际执行 Ticket 21 矩阵。
 
-- 一次只分配一个 Ticket；
-- 不同时分配并行 Ticket 07 和 08 给同一个弱模型；
-- Ticket 09、10 应要求模型先输出源码事实复核，再允许编码；
-- 要求每完成一个小步骤立即运行对应测试；
-- 不把完整 Batch 2 一次性作为单个 prompt；
-- 使用前置 summary 作为稳定接口，而不是让后续模型重新阅读全部历史提交；
-- 高风险 Ticket 完成后应由更强模型或人工进行 code review。
+---
 
-## 参考文档
+## 11. Summary 约定
 
-- `.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md`
-- `docs/development/batch2-training-data-and-sampling-tasks.md`
-- `docs/development/batch1-correctness-and-extension-foundation-tasks.md`
-- `docs/implementation/enhanced-dfl-master-implementation-plan.md`
-- `docs/implementation/training-enhancement-implementation-plan.md`
-- `docs/optimization/training-quality-algorithm-roadmap.md`
-- `docs/optimization/src-dst-training-quality-optimization-design.md`
-- `docs/implementation/deepfacelab-config-and-extension-architecture.md`
-- `docs/implementation/deepfacelab-code-modification-map.md`
-- `docs/implementation/manual-quality-acceptance-and-development-validation-standard.md`
+每个 Ticket 完成后生成：
+
+```text
+.scratch/batch2-training-data-and-sampling/reports/<ticket-name>-summary.md
+```
+
+至少记录：
+
+- before/after commit；
+- 修改文件、函数和接口；
+- 数据/配置契约；
+- 自动测试命令与原始摘要；
+- legacy 回归；
+- Unicode；
+- options-json 文档同步；
+- spawn/Windows 状态；
+- 未完成项；
+- 风险；
+- 下一 Ticket 可依赖接口；
+- Reviewer 结论。
+
+Ticket 16、20 必须独立 Reviewer。
+
+---
+
+## 12. 最终 DONE 定义
+
+只有：
+
+```text
+14—20 PASS
++
+Full regression PASS
++
+Analyzer→Loader→Policy E2E PASS
++
+Canonical buckets PASS
++
+Stale detection PASS
++
+Incremental == Force Full
++
+Windows spawn PASS
++
+Windows FP32 + AdaBelief PASS
++
+Ordinary/Packed PASS
++
+四种 mode PASS
++
+SRC/DST side config PASS
++
+Fallback boundary PASS
++
+Save/Exit/Resume PASS
++
+Loss Window offline recompute PASS
++
+Docs/Handoff consistency PASS
+```
+
+才可由 Ticket 21 重新签发：
+
+```text
+Status: done
+```
+
+否则必须使用：
+
+```text
+PENDING-WINDOWS
+FIXES-REQUIRED
+BLOCKED-BY-XX
+FAIL
+```
+
+---
+
+## 13. 历史 Ticket 01—13
+
+历史实现文档继续保留：
+
+```text
+01-baseline-and-fixtures.md
+02-sample-identity-and-metadata-schema.md
+03-lightweight-faceset-analyzer-core.md
+04-analyzer-cli-atomic-store-and-incremental.md
+05-metadata-loader-folder-packed-compat.md
+06-sampling-policy-and-legacy-adapters.md
+07-pose-balanced-sampling.md
+08-quality-aware-weighting.md
+09-weighted-index-host-and-generator-integration.md
+10-config-saehd-logging-and-fallback.md
+11-batch2-test-matrix-and-windows-acceptance.md
+12-compatibility-docs-and-handoff.md
+13-loss-window-logging-and-observability.md
+```
+
+这些文件是历史实现上下文，不覆盖 Ticket 14—21 的修复要求。

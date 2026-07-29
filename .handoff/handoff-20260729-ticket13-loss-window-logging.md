@@ -2,7 +2,7 @@
 
 > 日期：2026-07-29  
 > 分支：`codex/batch2-metadata-sampling-design`  
-> 状态：设计完成，等待 Batch 2 末尾实施
+> 状态：已完成 (macOS 轻量验证 PASS, 175/175 测试通过)
 
 ## 1. 背景
 

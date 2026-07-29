@@ -1,6 +1,6 @@
 # Batch 2 Training Data Metadata and Sampling
 
-Status: ready-for-implementation
+Status: done-macos-lightweight-pending-windows
 
 ## 背景
 

@@ -3,7 +3,7 @@
 > 文档版本：v1.0  
 > 创建日期：2026-07-27  
 > 设计基线：`55d4d8a4d29dc0fcc4a571d2c4f24dcdb2b7069e`  
-> 当前状态：详细设计与 ticket 拆分阶段，尚未开始运行时代码实现  
+> 当前状态：done-macos-lightweight-pending-windows (macOS 169/169 烟雾测试通过，Windows GPU 验证挂起)  
 > 批次定位：承接总实施计划中的 `Batch 2：训练数据增强`  
 > 训练基线：`FP32 + AdaBelief`  
 > 执行原则：在不修改 SAEHD 网络、Loss、checkpoint 和 Merge 格式的前提下，交付可独立长期使用的 Metadata 分析与静态智能采样完整模块。

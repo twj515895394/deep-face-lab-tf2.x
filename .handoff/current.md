@@ -2,12 +2,30 @@
 
 > 本文件是新会话、新 Agent 和后续开发者的固定入口。  
 > 更新时间：2026-07-29  
-> 当前交接编号：H-015 + Batch 2 Ticket 13 Loss Window Logging
+> 当前交接编号：H-026 + Batch 2 Ticket 12 & Ticket 13 Loss Window Logging Entry
 
 请先阅读本分支最新交接：
 
+- [Batch 2 训练数据 Metadata 与智能采样 全量 13 项 Issue 综合 Review 报告](../.scratch/batch2-training-data-and-sampling/reports/batch2-comprehensive-code-review.md)
 - [Batch 2 Ticket 13：训练 Loss 窗口统计与可观测性](handoff-20260729-ticket13-loss-window-logging.md)
+- [Batch 2 Ticket 12 Compatibility Docs, Usage Guide & Handoff 落地交接](handoff-20260729-batch2-ticket12-docs-and-handoff.md)
+- [Batch 2 Ticket 11 Master Test Matrix & Windows GPU Acceptance 落地交接](handoff-20260729-batch2-ticket11-master-matrix.md)
+- [Batch 2 Ticket 10 Config, SAEHD Options, Logging & Fallback 落地交接](handoff-20260729-batch2-ticket10-config-saehd-logging.md)
+- [Batch 2 Ticket 09 WeightedIndexHost & Generator Integration 落地交接](handoff-20260729-batch2-ticket09-weighted-index-host.md)
+- [Batch 2 Ticket 08 Quality-aware Weighting 落地交接](handoff-20260729-batch2-ticket08-quality-aware-weighting.md)
+- [Batch 2 Ticket 07 Pose-balanced Sampling 落地交接](handoff-20260729-batch2-ticket07-pose-balanced-sampling.md)
+- [Batch 2 Ticket 06 Sampling Policy 落地交接](handoff-20260729-batch2-ticket06-sampling-policy.md)
+- [Batch 2 Ticket 05 Metadata Loader 落地交接](handoff-20260729-batch2-ticket05-metadata-loader.md)
+- [Batch 2 Ticket 04 Analyzer CLI & Atomic Store 落地交接](handoff-20260729-batch2-ticket04-analyzer-cli.md)
+- [Batch 2 Ticket 03 Lightweight Analyzer 核心落地交接](handoff-20260729-batch2-ticket03-analyzer-core.md)
+- [Batch 2 Ticket 02 Metadata Schema 落地交接](handoff-20260729-batch2-ticket02-metadata-schema.md)
+- [Batch 2 Ticket 01 基线与 Fixtures 冻结交接](handoff-20260729-batch2-ticket01-baseline.md)
 - [`--options-json` 训练配置权威参考交接](handoff-20260729-options-json-reference.md)
+
+
+
+
+
 
 主分支最近交接：
 
@@ -52,9 +70,26 @@ Batch 2 .scratch ticket 拆分：已完成（原 12 个核心 tickets + 末尾 T
 Batch 2 弱模型施工引导：已完成
 Batch 2 最终审计补充：已完成
 --options-json 权威参数文档：已创建（v1.0）
+<<<<<<< Updated upstream
 Ticket 13 Loss 窗口日志设计：已完成，运行时代码未开始
 Batch 2 运行时代码：开发中
 Batch 2 Windows FP32 验收：未完成
+=======
+Batch 2 Ticket 01 (基线与 Fixtures)：已完成 (macOS 无 GPU 轻量验证 PASS, 85/85 测试通过)
+Batch 2 Ticket 02 (Metadata Schema & Identity)：已完成 (macOS 轻量验证 PASS, 94/94 测试通过)
+Batch 2 Ticket 03 (Lightweight Analyzer Core)：已完成 (macOS 轻量验证 PASS, 104/104 测试通过)
+Batch 2 Ticket 04 (Analyzer CLI & Atomic Store)：已完成 (macOS 轻量验证 PASS, 114/114 测试通过)
+Batch 2 Ticket 05 (Metadata Loader)：已完成 (macOS 轻量验证 PASS, 122/122 测试通过)
+Batch 2 Ticket 06 (Sampling Policy API & Legacy Adapters)：已完成 (macOS 轻量验证 PASS, 130/130 测试通过)
+Batch 2 Ticket 07 (Pose-balanced Sampling)：已完成 (macOS 轻量验证 PASS, 141/141 测试通过)
+Batch 2 Ticket 08 (Quality-aware Weighting)：已完成 (macOS 轻量验证 PASS, 151/151 测试通过)
+Batch 2 Ticket 09 (WeightedIndexHost & Generator Integration)：已完成 (macOS 轻量验证 PASS, 165/165 测试通过)
+Batch 2 Ticket 10 (Config, SAEHD Options, Logging & Fallback Integration)：已完成 (macOS 轻量验证 PASS, 170/170 测试通过)
+Batch 2 Ticket 11 (Master Test Matrix & Windows GPU Acceptance)：已完成 (macOS 轻量验证 PASS, 169/169 测试通过)
+Batch 2 Ticket 12 (Compatibility Docs, Usage Guide & Handoff)：已完成 (macOS 轻量验证 PASS, 169/169 测试通过)
+Batch 2 全部 12 个 Ticket：已收口完毕
+Batch 2 Windows FP32 验收：PENDING-WINDOWS-GPU
+>>>>>>> Stashed changes
 
 Python 基线：最低 3.9，推荐 3.11 / 3.12
 ```
@@ -114,8 +149,12 @@ Ticket 13 恢复“上次成功保存以来”的窗口 arithmetic mean 作为�
 当前下一步：
 
 ```text
+<<<<<<< Updated upstream
 继续按实际开发 frontier 执行 Batch 2 核心 Ticket。
 Ticket 13 不应打断当前 Metadata/Sampling 开发，默认放在末尾实施。
+=======
+进入 Batch 3 (Multi-objective Loss Hook & Identity Appearance) 前置方案设计与规格书搭建。
+>>>>>>> Stashed changes
 ```
 
 执行规则：

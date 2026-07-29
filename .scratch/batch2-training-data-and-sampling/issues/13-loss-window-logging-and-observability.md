@@ -1,6 +1,6 @@
 # 13 — 恢复训练日志区间平均 Loss，并保留单步诊断与可观测性
 
-Status: open  
+Status: done-macos-lightweight-pending-windows  
 Type: AFK + Windows GPU  
 Blocked by: `12-compatibility-docs-and-handoff.md`  
 GitHub Issue: `#3`

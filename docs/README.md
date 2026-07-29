@@ -1,8 +1,8 @@
 # DeepFaceLab TF2.x 文档总索引
 
-> 文档版本：v2.1  
-> 更新日期：2026-07-26  
-> 定位：项目文档导航。实际开发顺序以统一总实施计划为准，当前批次施工细节以 `development/` 文档为准。
+> 文档版本：v2.2  
+> 更新日期：2026-07-29  
+> 定位：项目文档导航。实际开发顺序以统一总实施计划为准，当前批次施工细节以 `development/` 文档与 `usage/` 用户文档为准。
 
 ---
 
@@ -19,7 +19,7 @@
    ↓
 配置与扩展框架
    ↓
-数据与采样增强
+数据与采样增强 (Batch 2)
    ↓
 身份外观与身份几何训练
    ↓
@@ -39,6 +39,8 @@ Temporal Stabilization
 当前正在执行的批次级施工入口：
 
 - [Batch 1：P0 正确性与扩展安全骨架详细设计](development/batch1-correctness-and-extension-foundation-tasks.md)
+- [Batch 2：训练数据 Metadata 与 Quality / Pose Sampling 详细设计](development/batch2-training-data-and-sampling-tasks.md)
+- [Batch 2 用户指南：Faceset Metadata 与智能采样使用指南](usage/faceset-metadata-and-sampling.md)
 
 ---
 
@@ -47,30 +49,36 @@ Temporal Stabilization
 ```text
 Phase 1：现状、TF2.x 与源码基线
                   ↓
-Phase 2：训练正确性与扩展骨架
+Phase 2：训练正确性与扩展骨架 (Batch 1)
                   ↓
-Phase 3：训练质量、Identity Geometry 与 Curriculum
+Phase 3：数据与采样增强 (Batch 2)
                   ↓
-Phase 4：Source Shape Template 与 Shape-aware Merge
+Phase 4：训练质量、Identity Geometry 与 Curriculum
                   ↓
-Phase 5：Mask、Temporal、联调与人工验收
+Phase 5：Source Shape Template 与 Shape-aware Merge
                   ↓
-Phase 6：Linux 服务化与 UI（核心引擎稳定后）
+Phase 6：Mask、Temporal、联调与人工验收
 ```
 
-当前阶段：**Phase 2 / Batch 1 macOS 轻量实现与复核已完成，准备进入 Batch 2 前置设计 / 任务拆分。**
+当前阶段：**Phase 3 / Batch 2 数据与采样增强代码与单元测试已全部完成 (macOS 轻量验证 169/169 PASS，Windows GPU 实机验收 PENDING)。**
 
 当前代码状态：
 
 ```text
-Batch 1 详细设计：已完成
-Eyes / Mouth Priority 真实 mask 修复：macOS 轻量验证已完成
-训练异常语义：macOS 轻量验证已完成
-Precision Contract / dtype 审计：macOS 轻量验证已完成
-Optimizer roundtrip / Lion v2 / finite gate：macOS 轻量验证已完成
-Enhancement Feature Flag 骨架：macOS 轻量验证已完成，默认全部关闭
-Training save/resume 与 Merge 默认路径 smoke：macOS 轻量验证已完成
-Windows GPU 真实训练、保存恢复、Merge 质量与 FP16/BF16 稳定性：待补证
+Batch 1 (Ticket 01-11)：macOS 轻量验证 PASS
+Batch 2 Ticket 01 (基线与 Fixtures)：macOS 轻量验证 PASS
+Batch 2 Ticket 02 (Metadata Schema & Identity)：macOS 轻量验证 PASS
+Batch 2 Ticket 03 (Lightweight Analyzer Core)：macOS 轻量验证 PASS
+Batch 2 Ticket 04 (Analyzer CLI & Atomic Store)：macOS 轻量验证 PASS
+Batch 2 Ticket 05 (Metadata Loader)：macOS 轻量验证 PASS
+Batch 2 Ticket 06 (Sampling Policy API & Legacy Adapters)：macOS 轻量验证 PASS
+Batch 2 Ticket 07 (Pose-balanced Sampling)：macOS 轻量验证 PASS
+Batch 2 Ticket 08 (Quality-aware Weighting)：macOS 轻量验证 PASS
+Batch 2 Ticket 09 (WeightedIndexHost & Generator Integration)：macOS 轻量验证 PASS
+Batch 2 Ticket 10 (Config, SAEHD Options, Logging & Fallback Integration)：macOS 轻量验证 PASS
+Batch 2 Ticket 11 (Master Test Matrix & Windows GPU Acceptance)：macOS 轻量验证 PASS (169/169 PASS)
+Batch 2 Ticket 12 (Compatibility Docs, Usage Guide & Handoff)：已完成
+Windows GPU 真实 Blackwell 训练与 FP32+AdaBelief 验收：PENDING-WINDOWS-GPU
 ```
 
 最新交接入口：

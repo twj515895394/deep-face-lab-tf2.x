@@ -1,14 +1,22 @@
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+from samplelib.metadata.contracts import (
+    PITCH_BUCKET_NAME_TO_ID,
+    UNKNOWN_BUCKET_ID,
+    YAW_BUCKET_NAME_TO_ID,
+    get_pitch_bucket_id,
+    get_yaw_bucket_id,
+)
 from samplelib.metadata.fingerprint import build_dataset_fingerprint, build_sample_signature
 from samplelib.metadata.identity import build_sample_id, build_sample_key
 from samplelib.metadata.schema import SCHEMA_VERSION_CURRENT, FacesetMetadataV1
 from samplelib.metadata.store import load_metadata
+
 
 
 class FacesetMetadataStatus(Enum):
@@ -20,24 +28,6 @@ class FacesetMetadataStatus(Enum):
     PARTIAL_MATCH = "partial_match"
     SAMPLE_KEY_COLLISION = "sample_key_collision"
 
-
-YAW_BUCKET_NAME_TO_ID: Dict[str, int] = {
-    "pitch_center_yaw_center": 0,
-    "front": 1,
-    "slight_left": 2,
-    "slight_right": 3,
-    "left": 4,
-    "right": 5,
-    "extreme": 6,
-}
-
-PITCH_BUCKET_NAME_TO_ID: Dict[str, int] = {
-    "up": 0,
-    "center": 1,
-    "down": 2,
-}
-
-UNKNOWN_BUCKET_ID: int = -1
 
 
 @dataclass
@@ -229,13 +219,16 @@ class FacesetMetadataLoader:
                     yaw_str = p_info.get("yaw_bucket")
                     pitch_str = p_info.get("pitch_bucket")
 
-                    if yaw_str in YAW_BUCKET_NAME_TO_ID:
-                        yaw_bucket_ids[i] = YAW_BUCKET_NAME_TO_ID[yaw_str]
-                    if pitch_str in PITCH_BUCKET_NAME_TO_ID:
-                        pitch_bucket_ids[i] = PITCH_BUCKET_NAME_TO_ID[pitch_str]
+                    y_id, y_valid = get_yaw_bucket_id(yaw_str)
+                    p_id, p_valid = get_pitch_bucket_id(pitch_str)
 
-                    if yaw_bucket_ids[i] != UNKNOWN_BUCKET_ID:
+                    if y_valid:
+                        yaw_bucket_ids[i] = y_id
                         pose_valid[i] = True
+
+                    if p_valid:
+                        pitch_bucket_ids[i] = p_id
+
 
         matched_ratio = matched_count / float(N)
         current_fingerprint = build_dataset_fingerprint(current_sig_objects)

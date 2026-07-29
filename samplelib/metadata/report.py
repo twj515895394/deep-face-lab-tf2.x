@@ -85,10 +85,11 @@ def generate_analyzer_report(
         recomputed_count=recomputed_count,
         added_count=added_count,
         removed_count=removed_count,
-        pose_distribution_yaw=summary.get("pose_distribution_yaw", {}),
-        pose_distribution_pitch=summary.get("pose_distribution_pitch", {}),
+        pose_distribution_yaw=summary.get("yaw_bucket_counts") or summary.get("pose_distribution_yaw") or {},
+        pose_distribution_pitch=summary.get("pitch_bucket_counts") or summary.get("pose_distribution_pitch") or {},
         invalid_samples_detail=invalid_details,
     )
+
     return report
 
 

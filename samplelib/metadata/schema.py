@@ -5,7 +5,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from samplelib.metadata.contracts import is_valid_pitch_bucket, is_valid_yaw_bucket
+
 SCHEMA_VERSION_CURRENT = 1
+
+
+
 
 
 @dataclass
@@ -129,7 +134,17 @@ class FacesetMetadataV1:
                         continue
                 seen_sample_ids.add(sample_id)
 
+                pose_info = sample.get("pose")
+                if isinstance(pose_info, dict) and pose_info.get("valid", False):
+                    y_b = pose_info.get("yaw_bucket")
+                    p_b = pose_info.get("pitch_bucket")
+                    if not is_valid_yaw_bucket(y_b):
+                        issues.append(MetadataValidationIssue(code="INVALID_YAW_BUCKET", message=f"Unrecognized yaw_bucket: {y_b}", sample_key=sample_key))
+                    if not is_valid_pitch_bucket(p_b):
+                        issues.append(MetadataValidationIssue(code="INVALID_PITCH_BUCKET", message=f"Unrecognized pitch_bucket: {p_b}", sample_key=sample_key))
+
                 validated_samples.append(sample)
+
 
         instance = cls(
             schema_version=schema_ver,

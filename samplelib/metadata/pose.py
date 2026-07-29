@@ -71,38 +71,56 @@ def validate_landmarks(landmarks: Optional[np.ndarray], img_shape: Optional[Tupl
     return LandmarkValidation(valid=True, point_count=point_count)
 
 
+from samplelib.metadata.contracts import PITCH_BUCKET_NAMES, YAW_BUCKET_NAMES
+
+
 def assign_yaw_bucket(yaw: float, thresholds: Tuple[float, ...] = (-0.8, -0.4, -0.15, 0.15, 0.4, 0.8)) -> str:
     """
     Map yaw angle (in radians) to human-interpretable pose bucket.
+    Must strictly return one of YAW_BUCKET_NAMES.
     """
+    if not math.isfinite(yaw):
+        return "unknown"
+
+    if len(thresholds) != 6:
+        thresholds = (-0.8, -0.4, -0.15, 0.15, 0.4, 0.8)
+
     t1, t2, t3, t4, t5, t6 = thresholds
     if yaw < t1:
-        return "extreme_left"
+        return YAW_BUCKET_NAMES[0]  # extreme_left
     elif yaw < t2:
-        return "major_left"
+        return YAW_BUCKET_NAMES[1]  # major_left
     elif yaw < t3:
-        return "minor_left"
+        return YAW_BUCKET_NAMES[2]  # minor_left
     elif yaw <= t4:
-        return "center"
+        return YAW_BUCKET_NAMES[3]  # center
     elif yaw <= t5:
-        return "minor_right"
+        return YAW_BUCKET_NAMES[4]  # minor_right
     elif yaw <= t6:
-        return "major_right"
+        return YAW_BUCKET_NAMES[5]  # major_right
     else:
-        return "extreme_right"
+        return YAW_BUCKET_NAMES[6]  # extreme_right
 
 
 def assign_pitch_bucket(pitch: float, thresholds: Tuple[float, ...] = (-0.15, 0.15)) -> str:
     """
     Map pitch angle (in radians) to human-interpretable pitch bucket.
+    Must strictly return one of PITCH_BUCKET_NAMES.
     """
+    if not math.isfinite(pitch):
+        return "unknown"
+
+    if len(thresholds) != 2:
+        thresholds = (-0.15, 0.15)
+
     t1, t2 = thresholds
     if pitch < t1:
-        return "up"
+        return PITCH_BUCKET_NAMES[0]  # up
     elif pitch <= t2:
-        return "level"
+        return PITCH_BUCKET_NAMES[1]  # level
     else:
-        return "down"
+        return PITCH_BUCKET_NAMES[2]  # down
+
 
 
 def analyze_pose(landmarks: Optional[np.ndarray], img_shape: Optional[Tuple[int, ...]] = None, config: Optional[FacesetPoseConfig] = None) -> PoseAnalysisResult:

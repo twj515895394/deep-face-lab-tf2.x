@@ -159,19 +159,24 @@ class FacesetAnalyzer:
         # ----------------------------------------------------
         # Summary & Statistics Aggregation
         # ----------------------------------------------------
-        yaw_counts = {}
-        pitch_counts = {}
+        from samplelib.metadata.contracts import PITCH_BUCKET_NAMES, YAW_BUCKET_NAMES
+
+        yaw_counts = {b: 0 for b in YAW_BUCKET_NAMES}
+        yaw_counts["unknown"] = 0
+        pitch_counts = {b: 0 for b in PITCH_BUCKET_NAMES}
+        pitch_counts["unknown"] = 0
         valid_quality_scores = []
 
         for s in finalized_samples:
-            y_b = s["pose"]["yaw_bucket"]
-            p_b = s["pose"]["pitch_bucket"]
+            y_b = s["pose"].get("yaw_bucket", "unknown")
+            p_b = s["pose"].get("pitch_bucket", "unknown")
             yaw_counts[y_b] = yaw_counts.get(y_b, 0) + 1
             pitch_counts[p_b] = pitch_counts.get(p_b, 0) + 1
 
             q_val = s["quality"].get("quality_score")
             if q_val is not None and math.isfinite(q_val):
                 valid_quality_scores.append(q_val)
+
 
         if len(valid_quality_scores) > 0:
             q_stats = {

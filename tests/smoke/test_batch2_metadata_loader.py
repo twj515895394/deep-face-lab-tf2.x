@@ -64,6 +64,9 @@ class TestBatch2MetadataLoader(unittest.TestCase):
 
         # Check valid flags
         self.assertTrue(np.all(runtime.metadata_valid))
+        self.assertTrue(np.any(runtime.pose_valid), "pose_valid must not be all False when loading Analyzer outputs")
+        self.assertTrue(np.any(runtime.yaw_bucket_ids != UNKNOWN_BUCKET_ID), "yaw_bucket_ids must contain valid bucket IDs (not all -1)")
+
 
     def test_loader_missing_file(self):
         from samplelib import SampleLoader, SampleType

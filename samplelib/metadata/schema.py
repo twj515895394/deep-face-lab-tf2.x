@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from samplelib.metadata.contracts import (
     LEGACY_PITCH_ALIASES,
     LEGACY_YAW_ALIASES,
+    is_bool_compatible,
     is_valid_pitch_bucket,
     is_valid_yaw_bucket,
 )
@@ -146,8 +147,13 @@ class FacesetMetadataV1:
                         issues.append(MetadataValidationIssue(code="INVALID_POSE_MAPPING", message=f"Sample pose field must be a dict/mapping, got {type(pose_info).__name__}", sample_key=sample_key))
                     else:
                         valid_val = pose_info.get("valid")
-                        if valid_val is not None and not isinstance(valid_val, (bool, int)) and not (isinstance(valid_val, str) and valid_val.strip().lower() in ("true", "false", "1", "0")):
-                            issues.append(MetadataValidationIssue(code="INVALID_POSE_VALID_TYPE", message=f"Sample pose.valid must be boolean-compatible, got {valid_val!r}", sample_key=sample_key))
+                        # None is treated as "missing valid" (not a type error); non-compatible values are rejected.
+                        if valid_val is not None and not is_bool_compatible(valid_val):
+                            issues.append(MetadataValidationIssue(
+                                code="INVALID_POSE_VALID_TYPE",
+                                message=f"Sample pose.valid must be boolean-compatible, got {valid_val!r}",
+                                sample_key=sample_key,
+                            ))
 
                         y_b = pose_info.get("yaw_bucket")
                         p_b = pose_info.get("pitch_bucket")

@@ -122,22 +122,74 @@ def is_valid_pitch_bucket(name: Optional[Any]) -> bool:
     return is_valid
 
 
+# Allowed bool-compatible forms (shared by Schema and Loader):
+# True / False, exact int 0 / 1, strings true/false/1/0 (case-insensitive, stripped).
+# Explicitly rejected: other ints (2, -1), floats (1.0, 0.0), empty string, None, other strings.
+_BOOL_TRUE_STRINGS = frozenset({"true", "1"})
+_BOOL_FALSE_STRINGS = frozenset({"false", "0"})
+_BOOL_COMPAT_STRINGS = _BOOL_TRUE_STRINGS | _BOOL_FALSE_STRINGS
+
+KNOWN_RECORD_CHILD_KEYS: Tuple[str, ...] = ("pose", "quality", "image")
+
+
+def is_bool_compatible(val: Any) -> bool:
+    """
+    Return True iff val is an accepted boolean-compatible encoding.
+    Schema and Loader must share this rule (single contract).
+    """
+    if isinstance(val, bool):
+        return True
+    # Use type(val) is int so bool is not double-counted and float is rejected.
+    if type(val) is int and val in (0, 1):
+        return True
+    if isinstance(val, str) and val.strip().lower() in _BOOL_COMPAT_STRINGS:
+        return True
+    return False
+
+
 def parse_bool_valid(val: Any) -> bool:
     """
-    Safely parse boolean validity value.
-    Prevents Python string truthiness traps (e.g. bool("false") == True).
+    Safely parse boolean validity value under the shared bool-compatible contract.
+    Incompatible values (including 2, -1, 1.0, "", None) return False.
+    Prevents Python string truthiness traps (e.g. bool("false") == True)
+    and float equality traps (e.g. 1.0 == 1).
     """
-    if val is True or val == 1:
-        return True
-    if val is False or val == 0:
+    if isinstance(val, bool):
+        return val
+    if type(val) is int:
+        if val == 1:
+            return True
+        if val == 0:
+            return False
         return False
     if isinstance(val, str):
         val_clean = val.strip().lower()
-        if val_clean in ("true", "1"):
+        if val_clean in _BOOL_TRUE_STRINGS:
             return True
-        if val_clean in ("false", "0"):
+        if val_clean in _BOOL_FALSE_STRINGS:
             return False
     return False
+
+
+def is_record_structurally_valid(record: Any) -> bool:
+    """
+    metadata_valid structural gate:
+    - record is a mapping
+    - at least one known child key (pose/quality/image) is present
+    - every present known child value is itself a mapping
+
+    Business validity of pose/quality/image remains separate.
+    """
+    if not isinstance(record, dict):
+        return False
+    present = 0
+    for key in KNOWN_RECORD_CHILD_KEYS:
+        if key not in record:
+            continue
+        present += 1
+        if not isinstance(record.get(key), dict):
+            return False
+    return present > 0
 
 
 # ---------------------------------------------------------------------------

@@ -355,6 +355,188 @@ class TestBatch2MetadataLoader(unittest.TestCase):
         self.assertEqual(runtime.pitch_bucket_ids[0], UNKNOWN_BUCKET_ID)
         self.assertNotEqual(runtime.yaw_bucket_ids[0], UNKNOWN_BUCKET_ID)
 
+    def test_loader_schema_warnings_are_aggregated_by_code(self):
+        """Schema issues must be collapsed to one SCHEMA_ISSUE line per code with count=."""
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        meta_samples = []
+        for s in samples:
+            key = build_sample_key(getattr(s, "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+            sid = build_sample_id(key)
+            meta_samples.append({
+                "sample_key": key,
+                "sample_id": sid,
+                "pose": {"valid": True, "yaw_bucket": "front", "pitch_bucket": "center"},
+            })
+
+        path = self.temp_dir / "schema_agg.v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"schema_version": 1, "dataset": {}, "samples": meta_samples}, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        schema_yaw = [w for w in runtime.warnings if "SCHEMA_ISSUE [LEGACY_YAW_BUCKET_ALIAS]" in w]
+        schema_pitch = [w for w in runtime.warnings if "SCHEMA_ISSUE [LEGACY_PITCH_BUCKET_ALIAS]" in w]
+        self.assertEqual(len(schema_yaw), 1)
+        self.assertEqual(len(schema_pitch), 1)
+        self.assertIn(f"count={len(samples)}", schema_yaw[0])
+        self.assertIn(f"count={len(samples)}", schema_pitch[0])
+        self.assertIn("examples=[", schema_yaw[0])
+
+    def test_loader_total_warning_count_is_bounded(self):
+        """Total RuntimeMetadata.warnings must not grow with per-sample issue volume."""
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+        from samplelib.metadata.loader import _MAX_RUNTIME_WARNINGS
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        meta_samples = []
+        for s in samples:
+            key = build_sample_key(getattr(s, "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+            sid = build_sample_id(key)
+            meta_samples.append({
+                "sample_key": key,
+                "sample_id": sid,
+                "pose": {"valid": "BROKEN", "yaw_bucket": "front", "pitch_bucket": "nope"},
+            })
+
+        path = self.temp_dir / "warn_bound.v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"schema_version": 1, "dataset": {}, "samples": meta_samples}, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        self.assertLessEqual(len(runtime.warnings), _MAX_RUNTIME_WARNINGS)
+        # Must be O(codes), not O(samples)
+        self.assertLess(len(runtime.warnings), len(samples))
+
+    def test_loader_100k_alias_records_do_not_create_100k_runtime_warnings(self):
+        """100k legacy alias records must not produce ~100k RuntimeMetadata.warnings."""
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        n_alias = 100_000
+        meta_samples = []
+        # Keep real sample IDs first so match-time path still works, then pad with aliases.
+        for s in samples:
+            key = build_sample_key(getattr(s, "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+            sid = build_sample_id(key)
+            meta_samples.append({
+                "sample_key": key,
+                "sample_id": sid,
+                "pose": {"valid": True, "yaw_bucket": "front", "pitch_bucket": "level"},
+            })
+        for i in range(n_alias - len(samples)):
+            key = f"pad_{i:06d}.jpg"
+            meta_samples.append({
+                "sample_key": key,
+                "sample_id": build_sample_id(key),
+                "pose": {"valid": True, "yaw_bucket": "front", "pitch_bucket": "level"},
+            })
+
+        path = self.temp_dir / "alias_100k.v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"schema_version": 1, "dataset": {}, "samples": meta_samples}, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        schema_alias = [w for w in runtime.warnings if "SCHEMA_ISSUE [LEGACY_YAW_BUCKET_ALIAS]" in w]
+        self.assertEqual(len(schema_alias), 1)
+        self.assertIn(f"count={n_alias}", schema_alias[0])
+        self.assertLess(len(runtime.warnings), 50)
+        self.assertNotEqual(len(runtime.warnings), n_alias)
+
+    def test_loader_mixed_valid_and_malformed_child_is_not_metadata_valid(self):
+        """pose='BROKEN' + quality={} must not be metadata_valid."""
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        s0_key = build_sample_key(getattr(samples[0], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+        s0_id = build_sample_id(s0_key)
+
+        raw = {
+            "schema_version": 1,
+            "dataset": {"format": "ordinary", "sample_count": 1},
+            "samples": [{
+                "sample_key": s0_key,
+                "sample_id": s0_id,
+                "pose": "BROKEN",
+                "quality": {},
+            }],
+        }
+        path = self.temp_dir / "mixed_malformed.v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(raw, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        self.assertFalse(runtime.metadata_valid[0])
+
+    def test_loader_valid_yaw_pitch_ids_in_range(self):
+        """All valid yaw IDs in 0..6 and pitch IDs in 0..2."""
+        from samplelib import SampleLoader, SampleType
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples)
+
+        valid_yaw = runtime.yaw_bucket_ids[runtime.pose_valid]
+        self.assertTrue(len(valid_yaw) > 0)
+        self.assertTrue(np.all((valid_yaw >= 0) & (valid_yaw <= 6)))
+
+        valid_pitch_mask = runtime.pitch_bucket_ids != UNKNOWN_BUCKET_ID
+        valid_pitch = runtime.pitch_bucket_ids[valid_pitch_mask]
+        if len(valid_pitch) > 0:
+            self.assertTrue(np.all((valid_pitch >= 0) & (valid_pitch <= 2)))
+
+    def test_loader_loaded_status_does_not_imply_all_pose_valid(self):
+        """LOADED status must not be confused with every sample having pose_valid=True."""
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.store import load_metadata
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        loaded_meta, _ = load_metadata(self.ordinary_dir / "faceset_metadata.v1.json")
+        self.assertGreaterEqual(len(loaded_meta.samples), 1)
+        loaded_meta.samples[0]["pose"]["valid"] = False
+        loaded_meta.samples[0]["pose"]["yaw_bucket"] = "center"
+
+        path = self.temp_dir / "loaded_not_all_pose.v1.json"
+        loaded_meta.dump_json(path)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        self.assertEqual(runtime.status, FacesetMetadataStatus.LOADED)
+        self.assertEqual(runtime.matched_count, len(samples))
+        self.assertFalse(bool(np.all(runtime.pose_valid)))
+
+    def test_loader_image_pose_quality_metadata_semantics_separated(self):
+        """image/pose/quality/metadata validity arrays are independent."""
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        s0_key = build_sample_key(getattr(samples[0], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+        s0_id = build_sample_id(s0_key)
+
+        raw = {
+            "schema_version": 1,
+            "dataset": {},
+            "samples": [{
+                "sample_key": s0_key,
+                "sample_id": s0_id,
+                "image": {"valid": True},
+                "pose": {"valid": False, "yaw_bucket": "center", "pitch_bucket": "level"},
+                "quality": {"quality_score": 0.7},
+            }],
+        }
+        path = self.temp_dir / "sem_sep.v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(raw, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        self.assertTrue(runtime.metadata_valid[0])
+        self.assertFalse(runtime.pose_valid[0])
+        self.assertTrue(runtime.quality_valid[0])
+        self.assertEqual(runtime.yaw_bucket_ids[0], YAW_BUCKET_NAME_TO_ID["center"])
+
 
 if __name__ == "__main__":
     unittest.main()

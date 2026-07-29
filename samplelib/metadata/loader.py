@@ -1,7 +1,8 @@
+from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
 
@@ -18,11 +19,65 @@ from samplelib.metadata.contracts import (
     get_record_quality_valid,
     get_record_yaw_bucket,
     get_yaw_bucket_id,
+    is_record_structurally_valid,
 )
 from samplelib.metadata.fingerprint import build_dataset_fingerprint, build_sample_signature
 from samplelib.metadata.identity import build_sample_id, build_sample_key
-from samplelib.metadata.schema import SCHEMA_VERSION_CURRENT, FacesetMetadataV1
+from samplelib.metadata.schema import SCHEMA_VERSION_CURRENT, FacesetMetadataV1, MetadataValidationIssue
 from samplelib.metadata.store import load_metadata
+
+
+# Schema issue codes that must be surfaced as bounded RuntimeMetadata warnings.
+_SCHEMA_WARNING_CODES = frozenset({
+    "LEGACY_YAW_BUCKET_ALIAS",
+    "LEGACY_PITCH_BUCKET_ALIAS",
+    "INVALID_POSE_MAPPING",
+    "INVALID_POSE_VALID_TYPE",
+    "INVALID_YAW_BUCKET",
+    "INVALID_PITCH_BUCKET",
+})
+
+_MAX_WARNING_EXAMPLES = 5
+# Hard upper bound on RuntimeMetadata.warnings length (aggregated codes + match status).
+_MAX_RUNTIME_WARNINGS = 32
+
+
+def _aggregate_schema_issues_to_warnings(
+    issues: Sequence[MetadataValidationIssue],
+    codes: Iterable[str] = _SCHEMA_WARNING_CODES,
+    max_examples: int = _MAX_WARNING_EXAMPLES,
+) -> List[str]:
+    """
+    Collapse per-sample schema issues into one warning line per code:
+    SCHEMA_ISSUE [CODE] count=N examples=[at most max_examples]
+    """
+    code_set = frozenset(codes)
+    buckets: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"count": 0, "examples": []})
+    for issue in issues:
+        if issue.code not in code_set:
+            continue
+        bucket = buckets[issue.code]
+        bucket["count"] += 1
+        if len(bucket["examples"]) < max_examples:
+            if issue.sample_key:
+                bucket["examples"].append(f"{issue.sample_key}: {issue.message}")
+            else:
+                bucket["examples"].append(issue.message)
+
+    warnings: List[str] = []
+    for code in sorted(buckets.keys()):
+        data = buckets[code]
+        examples_str = ", ".join(data["examples"])
+        warnings.append(
+            f"SCHEMA_ISSUE [{code}] count={data['count']} examples=[{examples_str}]"
+        )
+    return warnings
+
+
+def _append_bounded_warning(warnings: List[str], message: str, max_total: int = _MAX_RUNTIME_WARNINGS) -> None:
+    """Append a warning if under the total cap; drop further messages once full."""
+    if len(warnings) < max_total:
+        warnings.append(message)
 
 
 
@@ -172,31 +227,26 @@ class FacesetMetadataLoader:
                     else:
                         meta_by_id[sid] = s_rec
 
-        warnings = []
+        warnings: List[str] = []
         if val_res and val_res.issues:
-            for issue in val_res.issues:
-                if issue.code in (
-                    "LEGACY_YAW_BUCKET_ALIAS",
-                    "LEGACY_PITCH_BUCKET_ALIAS",
-                    "INVALID_POSE_MAPPING",
-                    "INVALID_POSE_VALID_TYPE",
-                    "INVALID_YAW_BUCKET",
-                    "INVALID_PITCH_BUCKET",
-                ):
-                    warnings.append(f"SCHEMA_ISSUE [{issue.code}] {issue.message}")
+            for schema_warn in _aggregate_schema_issues_to_warnings(val_res.issues):
+                _append_bounded_warning(warnings, schema_warn)
 
         if len(duplicate_ids) > 0:
-            warnings.append(f"Detected {len(duplicate_ids)} duplicate sample_id records in metadata.")
-
+            _append_bounded_warning(
+                warnings,
+                f"Detected {len(duplicate_ids)} duplicate sample_id records in metadata.",
+            )
 
         alias_yaw_count = 0
-        alias_yaw_examples = []
+        alias_yaw_examples: List[str] = []
         alias_pitch_count = 0
-        alias_pitch_examples = []
+        alias_pitch_examples: List[str] = []
         unknown_yaw_count = 0
-        unknown_yaw_examples = []
+        unknown_yaw_examples: List[str] = []
         unknown_pitch_count = 0
-        unknown_pitch_examples = []
+        unknown_pitch_examples: List[str] = []
+        duplicate_collision_count = 0
 
         # 3. Identity mapping against runtime samples
         is_packed = any(getattr(s, "_filename_offset_size", None) is not None for s in samples)
@@ -225,25 +275,19 @@ class FacesetMetadataLoader:
 
             # Match against indexed records
             if sid in duplicate_ids:
-                warnings.append(f"Sample {key} collision in duplicate IDs, retaining neutral default.")
+                duplicate_collision_count += 1
                 continue
 
             if sid in meta_by_id:
                 rec = meta_by_id[sid]
                 matched_count += 1
 
-                # Check record structural validity (must have valid child dict)
-                has_child_container = (
-                    isinstance(rec.get("pose"), dict)
-                    or isinstance(rec.get("quality"), dict)
-                    or isinstance(rec.get("image"), dict)
-                )
-                if not isinstance(rec, dict) or not has_child_container:
+                # Structural gate: known children present and all of them are mappings.
+                if not is_record_structurally_valid(rec):
                     metadata_valid[i] = False
                     continue
 
                 metadata_valid[i] = True
-
 
                 # Quality validity and extraction
                 if get_record_quality_valid(rec):
@@ -265,11 +309,11 @@ class FacesetMetadataLoader:
                         raw_y_clean = raw_y_str.strip()
                         if raw_y_clean in LEGACY_YAW_ALIASES:
                             alias_yaw_count += 1
-                            if len(alias_yaw_examples) < 5:
+                            if len(alias_yaw_examples) < _MAX_WARNING_EXAMPLES:
                                 alias_yaw_examples.append(f"{key}: '{raw_y_clean}' -> '{norm_yaw}'")
                         elif not y_valid and raw_y_clean != "unknown":
                             unknown_yaw_count += 1
-                            if len(unknown_yaw_examples) < 5:
+                            if len(unknown_yaw_examples) < _MAX_WARNING_EXAMPLES:
                                 unknown_yaw_examples.append(f"{key}: '{raw_y_clean}'")
 
                     raw_p_str = p_info.get("pitch_bucket")
@@ -277,11 +321,11 @@ class FacesetMetadataLoader:
                         raw_p_clean = raw_p_str.strip()
                         if raw_p_clean in LEGACY_PITCH_ALIASES:
                             alias_pitch_count += 1
-                            if len(alias_pitch_examples) < 5:
+                            if len(alias_pitch_examples) < _MAX_WARNING_EXAMPLES:
                                 alias_pitch_examples.append(f"{key}: '{raw_p_clean}' -> '{norm_pitch}'")
                         elif not p_valid and raw_p_clean != "unknown":
                             unknown_pitch_count += 1
-                            if len(unknown_pitch_examples) < 5:
+                            if len(unknown_pitch_examples) < _MAX_WARNING_EXAMPLES:
                                 unknown_pitch_examples.append(f"{key}: '{raw_p_clean}'")
 
                 is_pose_record_valid = get_record_pose_valid(rec)
@@ -295,25 +339,32 @@ class FacesetMetadataLoader:
                 if p_valid:
                     pitch_bucket_ids[i] = p_id
 
-        # Collect bounded warnings
+        # Collect bounded match-time warnings (one line per issue family).
+        if duplicate_collision_count > 0:
+            _append_bounded_warning(
+                warnings,
+                f"DUPLICATE_SAMPLE_ID_COLLISION count={duplicate_collision_count}",
+            )
         if alias_yaw_count > 0:
-            warnings.append(
-                f"LEGACY_YAW_ALIAS_USED count={alias_yaw_count} examples=[{', '.join(alias_yaw_examples)}]"
+            _append_bounded_warning(
+                warnings,
+                f"LEGACY_YAW_ALIAS_USED count={alias_yaw_count} examples=[{', '.join(alias_yaw_examples)}]",
             )
         if alias_pitch_count > 0:
-            warnings.append(
-                f"LEGACY_PITCH_ALIAS_USED count={alias_pitch_count} examples=[{', '.join(alias_pitch_examples)}]"
+            _append_bounded_warning(
+                warnings,
+                f"LEGACY_PITCH_ALIAS_USED count={alias_pitch_count} examples=[{', '.join(alias_pitch_examples)}]",
             )
         if unknown_yaw_count > 0:
-            warnings.append(
-                f"UNKNOWN_YAW_BUCKET count={unknown_yaw_count} examples=[{', '.join(unknown_yaw_examples)}]"
+            _append_bounded_warning(
+                warnings,
+                f"UNKNOWN_YAW_BUCKET count={unknown_yaw_count} examples=[{', '.join(unknown_yaw_examples)}]",
             )
         if unknown_pitch_count > 0:
-            warnings.append(
-                f"UNKNOWN_PITCH_BUCKET count={unknown_pitch_count} examples=[{', '.join(unknown_pitch_examples)}]"
+            _append_bounded_warning(
+                warnings,
+                f"UNKNOWN_PITCH_BUCKET count={unknown_pitch_count} examples=[{', '.join(unknown_pitch_examples)}]",
             )
-
-
 
         matched_ratio = matched_count / float(N)
         current_fingerprint = build_dataset_fingerprint(current_sig_objects)
@@ -325,17 +376,24 @@ class FacesetMetadataLoader:
             fallback_reason = None
         elif matched_ratio >= min_match_ratio:
             status = FacesetMetadataStatus.PARTIAL_MATCH
-            warnings.append(
-                f"Fingerprint mismatch or partial match: {matched_count}/{N} matched ({matched_ratio * 100.0:.1f}%)."
+            _append_bounded_warning(
+                warnings,
+                f"Fingerprint mismatch or partial match: {matched_count}/{N} matched ({matched_ratio * 100.0:.1f}%).",
             )
             fallback_reason = None
         else:
             status = FacesetMetadataStatus.FINGERPRINT_MISMATCH
             fallback_reason = f"MATCH_RATIO_TOO_LOW_{matched_ratio:.2f}_BELOW_{min_match_ratio:.2f}"
-            warnings.append(f"Match ratio {matched_ratio:.2f} below threshold {min_match_ratio:.2f}.")
+            _append_bounded_warning(
+                warnings,
+                f"Match ratio {matched_ratio:.2f} below threshold {min_match_ratio:.2f}.",
+            )
 
         if strict and status != FacesetMetadataStatus.LOADED:
-            warnings.append("Strict mode enabled and metadata is not perfectly LOADED.")
+            _append_bounded_warning(
+                warnings,
+                "Strict mode enabled and metadata is not perfectly LOADED.",
+            )
 
         return RuntimeMetadata(
             status=status,

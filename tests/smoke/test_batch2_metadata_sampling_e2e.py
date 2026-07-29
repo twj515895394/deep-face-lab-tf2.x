@@ -115,25 +115,55 @@ class TestBatch2MetadataSamplingE2E(unittest.TestCase):
         self.assertEqual(len(draws), 1000)
         self.assertTrue(np.all((np.array(draws) >= 0) & (np.array(draws) < len(samples))))
 
+    def _name_to_yaw_map(self, samples, runtime):
+        mapping = {}
+        for i, s in enumerate(samples):
+            name = Path(getattr(s, "filename")).name
+            if runtime.pose_valid[i]:
+                mapping[name] = int(runtime.yaw_bucket_ids[i])
+        return mapping
+
     def test_packed_and_ordinary_share_canonical_bucket_ids(self):
-        """Verify Ordinary and Packed datasets map identical sample names to identical canonical yaw bucket IDs."""
+        """Self-contained: Analyzer both sides, 100% valid-name maps equal, order-invariant."""
+        analyzer = FacesetAnalyzer()
+
+        ord_meta = self.ordinary_dir / "faceset_metadata.v1.json"
+        pak_meta = self.packed_dir / "faceset_metadata.v1.json"
+        analyzer.analyze(self.ordinary_dir).metadata.dump_json(ord_meta)
+        analyzer.analyze(self.packed_dir).metadata.dump_json(pak_meta)
+
         ord_samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
         ord_runtime = FacesetMetadataLoader.load(self.ordinary_dir, ord_samples)
 
         pak_samples = SampleLoader.load(SampleType.FACE, self.packed_dir)
         pak_runtime = FacesetMetadataLoader.load(self.packed_dir, pak_samples)
 
-        ord_by_name = {Path(getattr(s, "filename")).name: ord_runtime.yaw_bucket_ids[i] for i, s in enumerate(ord_samples) if ord_runtime.pose_valid[i]}
-        pak_by_name = {Path(getattr(s, "filename")).name: pak_runtime.yaw_bucket_ids[i] for i, s in enumerate(pak_samples) if pak_runtime.pose_valid[i]}
+        ord_by_name = self._name_to_yaw_map(ord_samples, ord_runtime)
+        pak_by_name = self._name_to_yaw_map(pak_samples, pak_runtime)
 
+        self.assertEqual(set(ord_by_name.keys()), set(pak_by_name.keys()))
+        self.assertGreater(len(ord_by_name), 0)
+        self.assertEqual(ord_by_name, pak_by_name)
 
-        common_names = set(ord_by_name.keys()) & set(pak_by_name.keys())
-        self.assertGreater(len(common_names), 0)
-        for name in common_names:
-            self.assertEqual(
-                ord_by_name[name], pak_by_name[name],
-                f"Sample {name} yaw bucket ID mismatch: Ordinary={ord_by_name[name]}, Packed={pak_by_name[name]}"
-            )
+        # Reversed sample order must not change name→bucket semantics.
+        rev_ord_samples = list(reversed(ord_samples))
+        rev_ord_runtime = FacesetMetadataLoader.load(self.ordinary_dir, rev_ord_samples)
+        rev_ord_by_name = self._name_to_yaw_map(rev_ord_samples, rev_ord_runtime)
+        self.assertEqual(ord_by_name, rev_ord_by_name)
+
+        # Shuffled order (deterministic) likewise.
+        rng = np.random.RandomState(123)
+        order = list(range(len(ord_samples)))
+        rng.shuffle(order)
+        shuf_samples = [ord_samples[i] for i in order]
+        shuf_runtime = FacesetMetadataLoader.load(self.ordinary_dir, shuf_samples)
+        shuf_by_name = self._name_to_yaw_map(shuf_samples, shuf_runtime)
+        self.assertEqual(ord_by_name, shuf_by_name)
+
+        rev_pak_samples = list(reversed(pak_samples))
+        rev_pak_runtime = FacesetMetadataLoader.load(self.packed_dir, rev_pak_samples)
+        rev_pak_by_name = self._name_to_yaw_map(rev_pak_samples, rev_pak_runtime)
+        self.assertEqual(pak_by_name, rev_pak_by_name)
 
     def test_e2e_legacy_alias_sidecar_reading(self):
         """

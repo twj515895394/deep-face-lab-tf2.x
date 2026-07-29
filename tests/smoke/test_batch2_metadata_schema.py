@@ -10,6 +10,10 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from samplelib.metadata.contracts import (
+    is_bool_compatible,
+    parse_bool_valid,
+)
 from samplelib.metadata.fingerprint import (
     SampleSignature,
     build_dataset_fingerprint,
@@ -148,6 +152,75 @@ class TestBatch2MetadataSchema(unittest.TestCase):
         codes = [i.code for i in val.issues]
         self.assertIn("LEGACY_YAW_BUCKET_ALIAS", codes)
         self.assertIn("LEGACY_PITCH_BUCKET_ALIAS", codes)
+
+    def test_bool_valid_contract_true_values(self):
+        for val in (True, 1, "true", "TRUE", " True ", "1"):
+            self.assertTrue(is_bool_compatible(val), val)
+            self.assertTrue(parse_bool_valid(val), val)
+
+    def test_bool_valid_contract_false_values(self):
+        for val in (False, 0, "false", "FALSE", " False ", "0"):
+            self.assertTrue(is_bool_compatible(val), val)
+            self.assertFalse(parse_bool_valid(val), val)
+
+    def test_bool_valid_contract_rejects_other_ints(self):
+        for val in (2, -1, 1.0, 0.0, "", " ", "yes", "no", None, "BROKEN"):
+            self.assertFalse(is_bool_compatible(val), val)
+            self.assertFalse(parse_bool_valid(val), val)
+
+    def test_bool_valid_contract_schema_loader_consistency(self):
+        """Schema and parse_bool_valid must agree on accepted/rejected encodings.
+
+        Cases use a list of tuples (not a dict) because True/1/1.0 collide as dict keys.
+        expected_bool is None means incompatible type.
+        """
+        cases = [
+            (True, True),
+            (False, False),
+            (1, True),
+            (0, False),
+            ("true", True),
+            ("false", False),
+            ("1", True),
+            ("0", False),
+            (2, None),
+            (-1, None),
+            (1.0, None),
+            (0.0, None),
+            ("", None),
+            ("BROKEN", None),
+            (None, None),
+        ]
+        for val, expected_bool in cases:
+            if expected_bool is None:
+                self.assertFalse(is_bool_compatible(val), repr(val))
+                self.assertFalse(parse_bool_valid(val), repr(val))
+                if val is not None:
+                    raw = {
+                        "schema_version": 1,
+                        "samples": [{
+                            "sample_key": "x.jpg",
+                            "sample_id": build_sample_id("x.jpg"),
+                            "pose": {"valid": val, "yaw_bucket": "center"},
+                        }],
+                    }
+                    _, result = FacesetMetadataV1.from_mapping(raw)
+                    codes = [i.code for i in result.issues]
+                    self.assertIn("INVALID_POSE_VALID_TYPE", codes, f"val={val!r} codes={codes}")
+            else:
+                self.assertTrue(is_bool_compatible(val), repr(val))
+                self.assertEqual(parse_bool_valid(val), expected_bool, repr(val))
+                raw = {
+                    "schema_version": 1,
+                    "samples": [{
+                        "sample_key": "x.jpg",
+                        "sample_id": build_sample_id("x.jpg"),
+                        "pose": {"valid": val, "yaw_bucket": "center"},
+                    }],
+                }
+                _, result = FacesetMetadataV1.from_mapping(raw)
+                codes = [i.code for i in result.issues]
+                self.assertNotIn("INVALID_POSE_VALID_TYPE", codes, f"val={val!r} codes={codes}")
 
 
 if __name__ == "__main__":

@@ -195,18 +195,18 @@ class TestBatch2MetadataSchema(unittest.TestCase):
             if expected_bool is None:
                 self.assertFalse(is_bool_compatible(val), repr(val))
                 self.assertFalse(parse_bool_valid(val), repr(val))
-                if val is not None:
-                    raw = {
-                        "schema_version": 1,
-                        "samples": [{
-                            "sample_key": "x.jpg",
-                            "sample_id": build_sample_id("x.jpg"),
-                            "pose": {"valid": val, "yaw_bucket": "center"},
-                        }],
-                    }
-                    _, result = FacesetMetadataV1.from_mapping(raw)
-                    codes = [i.code for i in result.issues]
-                    self.assertIn("INVALID_POSE_VALID_TYPE", codes, f"val={val!r} codes={codes}")
+                # Explicit field presence (including null) must be schema-invalid.
+                raw = {
+                    "schema_version": 1,
+                    "samples": [{
+                        "sample_key": "x.jpg",
+                        "sample_id": build_sample_id("x.jpg"),
+                        "pose": {"valid": val, "yaw_bucket": "center"},
+                    }],
+                }
+                _, result = FacesetMetadataV1.from_mapping(raw)
+                codes = [i.code for i in result.issues]
+                self.assertIn("INVALID_POSE_VALID_TYPE", codes, f"val={val!r} codes={codes}")
             else:
                 self.assertTrue(is_bool_compatible(val), repr(val))
                 self.assertEqual(parse_bool_valid(val), expected_bool, repr(val))
@@ -221,6 +221,34 @@ class TestBatch2MetadataSchema(unittest.TestCase):
                 _, result = FacesetMetadataV1.from_mapping(raw)
                 codes = [i.code for i in result.issues]
                 self.assertNotIn("INVALID_POSE_VALID_TYPE", codes, f"val={val!r} codes={codes}")
+
+    def test_schema_pose_valid_missing_is_allowed(self):
+        """Missing pose.valid is allowed; business readers treat it as false."""
+        raw = {
+            "schema_version": 1,
+            "samples": [{
+                "sample_key": "00001.jpg",
+                "sample_id": build_sample_id("00001.jpg"),
+                "pose": {"yaw_bucket": "center", "pitch_bucket": "level"},
+            }],
+        }
+        _, val = FacesetMetadataV1.from_mapping(raw)
+        codes = [i.code for i in val.issues]
+        self.assertNotIn("INVALID_POSE_VALID_TYPE", codes)
+
+    def test_schema_pose_valid_explicit_null_is_invalid(self):
+        """Explicit pose.valid: null must produce INVALID_POSE_VALID_TYPE."""
+        raw = {
+            "schema_version": 1,
+            "samples": [{
+                "sample_key": "00001.jpg",
+                "sample_id": build_sample_id("00001.jpg"),
+                "pose": {"valid": None, "yaw_bucket": "center"},
+            }],
+        }
+        _, val = FacesetMetadataV1.from_mapping(raw)
+        codes = [i.code for i in val.issues]
+        self.assertIn("INVALID_POSE_VALID_TYPE", codes)
 
 
 if __name__ == "__main__":

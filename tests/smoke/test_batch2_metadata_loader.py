@@ -157,7 +157,7 @@ class TestBatch2MetadataLoader(unittest.TestCase):
         self.assertTrue(runtime.is_usable_for_sampling())
 
     def test_compact_array_memory_footprint(self):
-        """Verify memory overhead for 100,000 samples is lightweight (< 2MB)."""
+        """Legacy compact footprint for original arrays remains < 2MB."""
         N = 100_000
         quality_scores = np.ones(N, dtype=np.float32)
         yaw_bucket_ids = np.full(N, UNKNOWN_BUCKET_ID, dtype=np.int16)
@@ -176,6 +176,25 @@ class TestBatch2MetadataLoader(unittest.TestCase):
         )
         mb_size = total_bytes / (1024 * 1024)
         self.assertLess(mb_size, 2.0, f"Memory size {mb_size:.2f}MB exceeds 2MB limit for {N} samples")
+
+    def test_compact_array_memory_footprint_includes_all_contract_arrays(self):
+        """All Ticket 14 contract arrays for 100k samples stay lightweight (< 2.5MB)."""
+        N = 100_000
+        arrays = [
+            np.ones(N, dtype=np.float32),                 # quality_scores
+            np.full(N, UNKNOWN_BUCKET_ID, dtype=np.int16),  # yaw
+            np.full(N, UNKNOWN_BUCKET_ID, dtype=np.int16),  # pitch
+            np.zeros(N, dtype=np.bool_),  # pose_valid
+            np.zeros(N, dtype=np.bool_),  # quality_valid
+            np.zeros(N, dtype=np.bool_),  # metadata_valid
+            np.zeros(N, dtype=np.bool_),  # record_matched
+            np.zeros(N, dtype=np.bool_),  # image_valid
+            np.zeros(N, dtype=np.bool_),  # landmarks_valid
+        ]
+        total_bytes = sum(a.nbytes for a in arrays)
+        mb_size = total_bytes / (1024 * 1024)
+        # float32 + 2*int16 + 6*bool = 4+2+2+6 = 14 bytes/sample → ~1.34MB
+        self.assertLess(mb_size, 2.5, f"Full contract arrays {mb_size:.2f}MB exceed 2.5MB for {N} samples")
 
     def test_loader_malformed_record_metadata_valid(self):
         from samplelib import SampleLoader, SampleType
@@ -523,6 +542,7 @@ class TestBatch2MetadataLoader(unittest.TestCase):
                 "sample_key": s0_key,
                 "sample_id": s0_id,
                 "image": {"valid": True},
+                "landmarks": {"valid": True},
                 "pose": {"valid": False, "yaw_bucket": "center", "pitch_bucket": "level"},
                 "quality": {"quality_score": 0.7},
             }],
@@ -532,10 +552,174 @@ class TestBatch2MetadataLoader(unittest.TestCase):
             json.dump(raw, f)
 
         runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        self.assertTrue(runtime.record_matched[0])
         self.assertTrue(runtime.metadata_valid[0])
+        self.assertTrue(runtime.image_valid[0])
+        self.assertTrue(runtime.landmarks_valid[0])
         self.assertFalse(runtime.pose_valid[0])
         self.assertTrue(runtime.quality_valid[0])
         self.assertEqual(runtime.yaw_bucket_ids[0], YAW_BUCKET_NAME_TO_ID["center"])
+
+    def test_loader_record_matched_distinguishes_unmatched_and_malformed(self):
+        """record_matched is true for unique ID hits even when structure is malformed."""
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        s0_key = build_sample_key(getattr(samples[0], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+        s0_id = build_sample_id(s0_key)
+        s1_key = build_sample_key(getattr(samples[1], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+        s1_id = build_sample_id(s1_key)
+
+        raw = {
+            "schema_version": 1,
+            "dataset": {},
+            "samples": [
+                # matched + malformed structure
+                {"sample_key": s0_key, "sample_id": s0_id, "pose": "BROKEN", "quality": {}},
+                # matched + structural OK
+                {
+                    "sample_key": s1_key,
+                    "sample_id": s1_id,
+                    "image": {"valid": True},
+                    "pose": {"valid": True, "yaw_bucket": "center", "pitch_bucket": "level"},
+                },
+            ],
+        }
+        path = self.temp_dir / "matched_vs_malformed.v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(raw, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        self.assertTrue(runtime.record_matched[0])
+        self.assertFalse(runtime.metadata_valid[0])
+        self.assertTrue(runtime.record_matched[1])
+        self.assertTrue(runtime.metadata_valid[1])
+        # Unmatched remaining samples
+        if len(samples) > 2:
+            self.assertFalse(bool(runtime.record_matched[2:].any()))
+
+    def test_loader_image_valid_uses_nested_contract(self):
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        s0_key = build_sample_key(getattr(samples[0], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+        s0_id = build_sample_id(s0_key)
+
+        raw = {
+            "schema_version": 1,
+            "dataset": {},
+            "samples": [{
+                "sample_key": s0_key,
+                "sample_id": s0_id,
+                "image": {"valid": "false"},
+                "pose": {"valid": True, "yaw_bucket": "center"},
+            }],
+        }
+        path = self.temp_dir / "image_valid_nested.v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(raw, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        self.assertTrue(runtime.metadata_valid[0])
+        self.assertFalse(runtime.image_valid[0])
+        self.assertTrue(runtime.pose_valid[0])
+
+    def test_loader_landmarks_valid_uses_nested_contract(self):
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        s0_key = build_sample_key(getattr(samples[0], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+        s0_id = build_sample_id(s0_key)
+
+        raw = {
+            "schema_version": 1,
+            "dataset": {},
+            "samples": [{
+                "sample_key": s0_key,
+                "sample_id": s0_id,
+                "landmarks": {"valid": False},
+                "pose": {"valid": True, "yaw_bucket": "center", "pitch_bucket": "level"},
+            }],
+        }
+        path = self.temp_dir / "landmarks_valid_nested.v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(raw, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        self.assertTrue(runtime.metadata_valid[0])
+        self.assertFalse(runtime.landmarks_valid[0])
+        self.assertTrue(runtime.pose_valid[0])
+
+    def test_loader_validity_arrays_are_independent(self):
+        """metadata/image/landmarks/pose/quality flags can each fail independently."""
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = list(SampleLoader.load(SampleType.FACE, self.ordinary_dir))
+        keys_ids = []
+        for s in samples[:4]:
+            k = build_sample_key(getattr(s, "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+            keys_ids.append((k, build_sample_id(k)))
+
+        # 0: image false, others true
+        # 1: landmarks false
+        # 2: pose false
+        # 3: quality invalid (missing score)
+        recs = [
+            {
+                "sample_key": keys_ids[0][0], "sample_id": keys_ids[0][1],
+                "image": {"valid": False}, "landmarks": {"valid": True},
+                "pose": {"valid": True, "yaw_bucket": "center", "pitch_bucket": "level"},
+                "quality": {"quality_score": 0.9},
+            },
+            {
+                "sample_key": keys_ids[1][0], "sample_id": keys_ids[1][1],
+                "image": {"valid": True}, "landmarks": {"valid": False},
+                "pose": {"valid": True, "yaw_bucket": "center", "pitch_bucket": "level"},
+                "quality": {"quality_score": 0.9},
+            },
+            {
+                "sample_key": keys_ids[2][0], "sample_id": keys_ids[2][1],
+                "image": {"valid": True}, "landmarks": {"valid": True},
+                "pose": {"valid": False, "yaw_bucket": "center", "pitch_bucket": "level"},
+                "quality": {"quality_score": 0.9},
+            },
+            {
+                "sample_key": keys_ids[3][0], "sample_id": keys_ids[3][1],
+                "image": {"valid": True}, "landmarks": {"valid": True},
+                "pose": {"valid": True, "yaw_bucket": "center", "pitch_bucket": "level"},
+                "quality": {},
+            },
+        ]
+        path = self.temp_dir / "independent_flags.v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"schema_version": 1, "dataset": {}, "samples": recs}, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+        self.assertTrue(np.all(runtime.record_matched[:4]))
+        self.assertTrue(np.all(runtime.metadata_valid[:4]))
+
+        self.assertFalse(runtime.image_valid[0])
+        self.assertTrue(runtime.landmarks_valid[0])
+        self.assertTrue(runtime.pose_valid[0])
+        self.assertTrue(runtime.quality_valid[0])
+
+        self.assertTrue(runtime.image_valid[1])
+        self.assertFalse(runtime.landmarks_valid[1])
+        self.assertTrue(runtime.pose_valid[1])
+
+        self.assertTrue(runtime.image_valid[2])
+        self.assertTrue(runtime.landmarks_valid[2])
+        self.assertFalse(runtime.pose_valid[2])
+        self.assertTrue(runtime.quality_valid[2])
+
+        self.assertTrue(runtime.image_valid[3])
+        self.assertTrue(runtime.landmarks_valid[3])
+        self.assertTrue(runtime.pose_valid[3])
+        self.assertFalse(runtime.quality_valid[3])
 
 
 if __name__ == "__main__":

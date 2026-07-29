@@ -129,7 +129,8 @@ _BOOL_TRUE_STRINGS = frozenset({"true", "1"})
 _BOOL_FALSE_STRINGS = frozenset({"false", "0"})
 _BOOL_COMPAT_STRINGS = _BOOL_TRUE_STRINGS | _BOOL_FALSE_STRINGS
 
-KNOWN_RECORD_CHILD_KEYS: Tuple[str, ...] = ("pose", "quality", "image")
+# Analyzer writes pose/quality/image/landmarks; all present known children must be mappings.
+KNOWN_RECORD_CHILD_KEYS: Tuple[str, ...] = ("pose", "quality", "image", "landmarks")
 
 
 def is_bool_compatible(val: Any) -> bool:
@@ -175,10 +176,10 @@ def is_record_structurally_valid(record: Any) -> bool:
     """
     metadata_valid structural gate:
     - record is a mapping
-    - at least one known child key (pose/quality/image) is present
+    - at least one known child key (pose/quality/image/landmarks) is present
     - every present known child value is itself a mapping
 
-    Business validity of pose/quality/image remains separate.
+    Business validity of pose/quality/image/landmarks remains separate.
     """
     if not isinstance(record, dict):
         return False
@@ -205,6 +206,16 @@ def get_record_image_valid(record: dict) -> bool:
     return False
 
 
+def get_record_landmarks_valid(record: dict) -> bool:
+    """landmarks.valid under the shared bool-compatible contract."""
+    if not isinstance(record, dict):
+        return False
+    lm_info = record.get("landmarks")
+    if isinstance(lm_info, dict):
+        return parse_bool_valid(lm_info.get("valid"))
+    return False
+
+
 def get_record_pose_valid(record: dict) -> bool:
     if not isinstance(record, dict):
         return False
@@ -214,7 +225,6 @@ def get_record_pose_valid(record: dict) -> bool:
         _, is_valid = get_yaw_bucket_id(yaw_str)
         return is_valid
     return False
-
 
 
 def get_record_quality_valid(record: dict) -> bool:

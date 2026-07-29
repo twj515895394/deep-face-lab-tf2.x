@@ -146,12 +146,12 @@ class FacesetMetadataV1:
                     if not isinstance(pose_info, dict):
                         issues.append(MetadataValidationIssue(code="INVALID_POSE_MAPPING", message=f"Sample pose field must be a dict/mapping, got {type(pose_info).__name__}", sample_key=sample_key))
                     else:
-                        valid_val = pose_info.get("valid")
-                        # None is treated as "missing valid" (not a type error); non-compatible values are rejected.
-                        if valid_val is not None and not is_bool_compatible(valid_val):
+                        # Field missing: allowed (business reads as false).
+                        # Field present but null/non-compatible: INVALID_POSE_VALID_TYPE.
+                        if "valid" in pose_info and not is_bool_compatible(pose_info["valid"]):
                             issues.append(MetadataValidationIssue(
                                 code="INVALID_POSE_VALID_TYPE",
-                                message=f"Sample pose.valid must be boolean-compatible, got {valid_val!r}",
+                                message=f"Sample pose.valid must be boolean-compatible, got {pose_info['valid']!r}",
                                 sample_key=sample_key,
                             ))
 

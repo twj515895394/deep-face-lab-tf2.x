@@ -14,6 +14,7 @@ from samplelib.metadata.contracts import (
     YAW_BUCKET_NAME_TO_ID,
     get_pitch_bucket_id,
     get_record_image_valid,
+    get_record_landmarks_valid,
     get_record_pitch_bucket,
     get_record_pose_valid,
     get_record_quality_valid,
@@ -92,6 +93,10 @@ class FacesetMetadataStatus(Enum):
 
 
 
+def _empty_bool(n: int = 0) -> np.ndarray:
+    return np.empty(0, dtype=np.bool_) if n == 0 else np.zeros(n, dtype=np.bool_)
+
+
 @dataclass
 class RuntimeMetadata:
     status: FacesetMetadataStatus
@@ -107,6 +112,10 @@ class RuntimeMetadata:
     dataset_fingerprint: Optional[str] = None
     warnings: List[str] = field(default_factory=list)
     fallback_reason: Optional[str] = None
+    # Per-sample validity contract arrays (Ticket 14 §4). Defaults keep older call sites working.
+    record_matched: np.ndarray = field(default_factory=_empty_bool)
+    image_valid: np.ndarray = field(default_factory=_empty_bool)
+    landmarks_valid: np.ndarray = field(default_factory=_empty_bool)
 
     def is_usable_for_sampling(self, min_ratio: float = 0.90) -> bool:
         """
@@ -117,6 +126,20 @@ class RuntimeMetadata:
         if self.status == FacesetMetadataStatus.PARTIAL_MATCH and self.matched_ratio >= min_ratio:
             return True
         return False
+
+    def usable_for_pose_sampling(self) -> np.ndarray:
+        """Per-sample: metadata structure OK and pose business-valid."""
+        n = self.sample_count
+        if len(self.pose_valid) != n or len(self.metadata_valid) != n:
+            return _empty_bool(n) if n else _empty_bool()
+        return self.metadata_valid & self.pose_valid
+
+    def usable_for_quality_sampling(self) -> np.ndarray:
+        """Per-sample: metadata structure OK and quality business-valid."""
+        n = self.sample_count
+        if len(self.quality_valid) != n or len(self.metadata_valid) != n:
+            return _empty_bool(n) if n else _empty_bool()
+        return self.metadata_valid & self.quality_valid
 
 
 class FacesetMetadataLoader:
@@ -149,6 +172,9 @@ class FacesetMetadataLoader:
                 quality_valid=np.empty(0, dtype=np.bool_),
                 metadata_valid=np.empty(0, dtype=np.bool_),
                 fallback_reason="NO_SAMPLES_PROVIDED",
+                record_matched=np.empty(0, dtype=np.bool_),
+                image_valid=np.empty(0, dtype=np.bool_),
+                landmarks_valid=np.empty(0, dtype=np.bool_),
             )
 
         if metadata_path is None:
@@ -163,55 +189,51 @@ class FacesetMetadataLoader:
         pose_valid = np.zeros(N, dtype=np.bool_)
         quality_valid = np.zeros(N, dtype=np.bool_)
         metadata_valid = np.zeros(N, dtype=np.bool_)
+        record_matched = np.zeros(N, dtype=np.bool_)
+        image_valid = np.zeros(N, dtype=np.bool_)
+        landmarks_valid = np.zeros(N, dtype=np.bool_)
 
-        # 1. Attempt to load metadata JSON
-        if not target_meta_path.exists():
+        def _neutral_runtime(status, fallback_reason, matched_count=0, matched_ratio=0.0, warnings=None, dataset_fingerprint=None):
             return RuntimeMetadata(
-                status=FacesetMetadataStatus.MISSING,
+                status=status,
                 sample_count=N,
-                matched_count=0,
-                matched_ratio=0.0,
+                matched_count=matched_count,
+                matched_ratio=matched_ratio,
                 quality_scores=quality_scores,
                 yaw_bucket_ids=yaw_bucket_ids,
                 pitch_bucket_ids=pitch_bucket_ids,
                 pose_valid=pose_valid,
                 quality_valid=quality_valid,
                 metadata_valid=metadata_valid,
-                fallback_reason="METADATA_FILE_NOT_FOUND",
+                dataset_fingerprint=dataset_fingerprint,
+                warnings=list(warnings or []),
+                fallback_reason=fallback_reason,
+                record_matched=record_matched,
+                image_valid=image_valid,
+                landmarks_valid=landmarks_valid,
+            )
+
+        # 1. Attempt to load metadata JSON
+        if not target_meta_path.exists():
+            return _neutral_runtime(
+                FacesetMetadataStatus.MISSING,
+                "METADATA_FILE_NOT_FOUND",
             )
 
         loaded_meta, val_res = load_metadata(target_meta_path)
 
         # Check for JSON parse / structural errors first
         if any(i.code in ("JSON_PARSE_ERROR", "INVALID_TOP_LEVEL") for i in val_res.issues):
-            return RuntimeMetadata(
-                status=FacesetMetadataStatus.INVALID_FILE,
-                sample_count=N,
-                matched_count=0,
-                matched_ratio=0.0,
-                quality_scores=quality_scores,
-                yaw_bucket_ids=yaw_bucket_ids,
-                pitch_bucket_ids=pitch_bucket_ids,
-                pose_valid=pose_valid,
-                quality_valid=quality_valid,
-                metadata_valid=metadata_valid,
-                fallback_reason="INVALID_METADATA_FILE_JSON",
+            return _neutral_runtime(
+                FacesetMetadataStatus.INVALID_FILE,
+                "INVALID_METADATA_FILE_JSON",
             )
 
         # Check for unsupported schema version
         if not val_res.is_supported or any(i.code == "UNSUPPORTED_SCHEMA_VERSION" for i in val_res.issues):
-            return RuntimeMetadata(
-                status=FacesetMetadataStatus.UNSUPPORTED_SCHEMA,
-                sample_count=N,
-                matched_count=0,
-                matched_ratio=0.0,
-                quality_scores=quality_scores,
-                yaw_bucket_ids=yaw_bucket_ids,
-                pitch_bucket_ids=pitch_bucket_ids,
-                pose_valid=pose_valid,
-                quality_valid=quality_valid,
-                metadata_valid=metadata_valid,
-                fallback_reason=f"UNSUPPORTED_SCHEMA_VERSION_{loaded_meta.schema_version}",
+            return _neutral_runtime(
+                FacesetMetadataStatus.UNSUPPORTED_SCHEMA,
+                f"UNSUPPORTED_SCHEMA_VERSION_{loaded_meta.schema_version}",
             )
 
         # 2. Index saved metadata records by sample_id
@@ -280,14 +302,19 @@ class FacesetMetadataLoader:
 
             if sid in meta_by_id:
                 rec = meta_by_id[sid]
+                # Unique sample_id hit (not a duplicate collision) counts as matched.
+                record_matched[i] = True
                 matched_count += 1
 
                 # Structural gate: known children present and all of them are mappings.
+                # Business validity of image/landmarks/pose/quality remains independent.
                 if not is_record_structurally_valid(rec):
                     metadata_valid[i] = False
                     continue
 
                 metadata_valid[i] = True
+                image_valid[i] = get_record_image_valid(rec)
+                landmarks_valid[i] = get_record_landmarks_valid(rec)
 
                 # Quality validity and extraction
                 if get_record_quality_valid(rec):
@@ -409,4 +436,7 @@ class FacesetMetadataLoader:
             dataset_fingerprint=saved_fingerprint,
             warnings=warnings,
             fallback_reason=fallback_reason,
+            record_matched=record_matched,
+            image_valid=image_valid,
+            landmarks_valid=landmarks_valid,
         )

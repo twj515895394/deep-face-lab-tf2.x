@@ -66,20 +66,21 @@ class TestBatch2AnalyzerCore(unittest.TestCase):
         self.assertIn("per_sample_ms", res.timing)
 
     def test_analyzer_valid_buckets_are_canonical(self):
-        """Every valid pose bucket written by Analyzer must be in the canonical set."""
+        """Every pose.valid=True sample must write only canonical yaw/pitch buckets."""
         res = FacesetAnalyzer().analyze(self.ordinary_dir)
-        yaw_set = set(YAW_BUCKET_NAMES) | {"unknown"}
-        pitch_set = set(PITCH_BUCKET_NAMES) | {"unknown"}
         for sample in res.metadata.samples:
             pose = sample.get("pose") or {}
             if pose.get("valid"):
-                self.assertIn(pose.get("yaw_bucket"), yaw_set)
-                self.assertIn(pose.get("pitch_bucket"), pitch_set)
-                # valid pose should not write unknown buckets under success path
-                if pose.get("yaw_bucket") != "unknown":
-                    self.assertIn(pose.get("yaw_bucket"), YAW_BUCKET_NAMES)
-                if pose.get("pitch_bucket") != "unknown":
-                    self.assertIn(pose.get("pitch_bucket"), PITCH_BUCKET_NAMES)
+                self.assertIn(
+                    pose.get("yaw_bucket"),
+                    YAW_BUCKET_NAMES,
+                    f"valid pose yaw must be canonical, got {pose.get('yaw_bucket')!r}",
+                )
+                self.assertIn(
+                    pose.get("pitch_bucket"),
+                    PITCH_BUCKET_NAMES,
+                    f"valid pose pitch must be canonical, got {pose.get('pitch_bucket')!r}",
+                )
 
     def test_analyzer_summary_keys_exact_set(self):
         """summary top-level keys and bucket count keys must match the fixed contract."""

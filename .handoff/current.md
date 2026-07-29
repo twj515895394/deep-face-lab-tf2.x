@@ -226,7 +226,7 @@ PENDING-WINDOWS-GPU
 - [Ticket 05 Metadata Loader](handoff-20260729-batch2-ticket05-metadata-loader.md)
 - [Ticket 06 Sampling Policy](handoff-20260729-batch2-ticket06-sampling-policy.md)
 - [Ticket 07 Pose-balanced](handoff-20260729-batch2-ticket07-pose-balanced-sampling.md)
-- [Ticket 08 Quality Weighting](handoff-20260729-batch2-ticket08-quality-weighting.md)
+- [Ticket 08 Quality Weighting](handoff-20260729-batch2-ticket08-quality-aware-weighting.md)
 - [Ticket 09 WeightedIndexHost](handoff-20260729-batch2-ticket09-weighted-index-host.md)
 - [Ticket 10 SAEHD/Config/Fallback](handoff-20260729-batch2-ticket10-config-saehd-logging.md)
 - [Ticket 11 Master Matrix](handoff-20260729-batch2-ticket11-master-matrix.md)

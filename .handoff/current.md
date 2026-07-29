@@ -1,184 +1,237 @@
 # 当前项目交接入口
 
 > 本文件是新会话、新 Agent 和后续开发者的固定入口。  
-> 更新时间：2026-07-29  
-> 当前交接编号：H-026 + Batch 2 Ticket 12 & Ticket 13 Loss Window Logging Entry
+> 更新时间：2026-07-29 20:33 +08:00  
+> 当前交接：Batch 2 独立 Review 与修复 Ticket 14—21  
+> 当前状态：REVIEW-FAILED / FIXES-REQUIRED / PENDING-WINDOWS-GPU
 
-请先阅读本分支最新交接：
+---
 
-- [Batch 2 训练数据 Metadata 与智能采样 全量 13 项 Issue 综合 Review 报告](../.scratch/batch2-training-data-and-sampling/reports/batch2-comprehensive-code-review.md)
-- [Batch 2 Ticket 13：训练 Loss 窗口统计与可观测性](handoff-20260729-ticket13-loss-window-logging.md)
-- [Batch 2 Ticket 12 Compatibility Docs, Usage Guide & Handoff 落地交接](handoff-20260729-batch2-ticket12-docs-and-handoff.md)
-- [Batch 2 Ticket 11 Master Test Matrix & Windows GPU Acceptance 落地交接](handoff-20260729-batch2-ticket11-master-matrix.md)
-- [Batch 2 Ticket 10 Config, SAEHD Options, Logging & Fallback 落地交接](handoff-20260729-batch2-ticket10-config-saehd-logging.md)
-- [Batch 2 Ticket 09 WeightedIndexHost & Generator Integration 落地交接](handoff-20260729-batch2-ticket09-weighted-index-host.md)
-- [Batch 2 Ticket 08 Quality-aware Weighting 落地交接](handoff-20260729-batch2-ticket08-quality-aware-weighting.md)
-- [Batch 2 Ticket 07 Pose-balanced Sampling 落地交接](handoff-20260729-batch2-ticket07-pose-balanced-sampling.md)
-- [Batch 2 Ticket 06 Sampling Policy 落地交接](handoff-20260729-batch2-ticket06-sampling-policy.md)
-- [Batch 2 Ticket 05 Metadata Loader 落地交接](handoff-20260729-batch2-ticket05-metadata-loader.md)
-- [Batch 2 Ticket 04 Analyzer CLI & Atomic Store 落地交接](handoff-20260729-batch2-ticket04-analyzer-cli.md)
-- [Batch 2 Ticket 03 Lightweight Analyzer 核心落地交接](handoff-20260729-batch2-ticket03-analyzer-core.md)
-- [Batch 2 Ticket 02 Metadata Schema 落地交接](handoff-20260729-batch2-ticket02-metadata-schema.md)
-- [Batch 2 Ticket 01 基线与 Fixtures 冻结交接](handoff-20260729-batch2-ticket01-baseline.md)
-- [`--options-json` 训练配置权威参考交接](handoff-20260729-options-json-reference.md)
+## 1. 最新交接
 
+必须先阅读：
 
+- [Batch 2 独立 Review、Analyzer 使用说明与修复 Ticket 14—21](handoff-20260729-batch2-independent-review-remediation.md)
+- [Batch 2 独立代码审查、问题汇总与修复总计划](../.scratch/batch2-training-data-and-sampling/reports/batch2-independent-code-review-and-remediation-plan.md)
+- [Faceset Analyzer 完整使用说明](../docs/usage/faceset-analyzer-complete-guide.md)
 
+此前的综合 Review 报告和 Ticket 01—13 summary 仍保留为历史证据，但不能再单独作为“Batch 2 已完成”的依据。
 
+---
 
-
-主分支最近交接：
-
-- [预览阈值 400 + Merger 中文化落地：handoff-20260729-121246.md](handoff-20260729-121246.md)
-
-Batch 2 开发必须依次阅读：
-
-1. [根目录 AGENTS.md 研发规范](../AGENTS.md)
-2. [Batch 2 Metadata 与 Sampling 详细设计交接](handoff-20260727-batch2-detailed-design.md)
-3. [Batch 2 ticket 总入口](../.scratch/batch2-training-data-and-sampling/spec.md)
-4. [Batch 2 正式详细设计](../docs/development/batch2-training-data-and-sampling-tasks.md)
-5. [`--options-json` 训练配置权威参考](../docs/implementation/options-json-training-configuration-reference.md)
-6. [Batch 2 最终审计补充契约](../.scratch/batch2-training-data-and-sampling/FINAL_AUDIT_CONTRACTS.md)
-7. [Batch 2 Agent 施工规范](../.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md)
-8. [Batch 2 首个 ticket：基线与 fixture](../.scratch/batch2-training-data-and-sampling/issues/01-baseline-and-fixtures.md)
-9. [Batch 2 末尾 Ticket 13：Loss 窗口日志与可观测性](../.scratch/batch2-training-data-and-sampling/issues/13-loss-window-logging-and-observability.md)
-
-其他重要交接与规范：
-
-1. [Issue 15 全项目中文路径兼容 + 原需求 A/B 说明](handoff-20260729-113305.md)
-2. [Issue 15 中文路径前一轮交接](handoff-20260728-161030.md)
-3. [模型加载 OOM 修复 handoff](handoff-20260727-165500.md)
-4. [Ticket 11 Batch 1 兼容矩阵与 handoff 汇总](handoff-20260726-203448.md)
-5. [Batch 1 详细设计](../docs/development/batch1-correctness-and-extension-foundation-tasks.md)
-6. [Batch 1 ticket 总入口](../.scratch/batch1-correctness-foundation/spec.md)
-7. [文档总索引](../docs/README.md)
-8. [Enhanced DFL 统一实施总计划](../docs/implementation/enhanced-dfl-master-implementation-plan.md)
-9. [开发验证与人工质量验收标准](../docs/implementation/manual-quality-acceptance-and-development-validation-standard.md)
-
-当前状态：
+## 2. 当前真实状态
 
 ```text
-Batch 1 全量 Ticket (01-11)：已完成（macOS 轻量验证已通过）
-Issue 15 全项目中文路径与 Unicode 编码兼容：已完成
-需求 A（简化）：训练预览 5 列阈值 256→400 已完成
-需求 B：Merger 参数双语 + 中文帮助图 已完成
-模型加载 OOM / 64MiB 分块 assign：已修复并实际验证
-AGENTS.md 研发规范：已创建并沉淀
+Batch 1：已完成 macOS 轻量验证
+Issue 15 Unicode / 中文路径：已完成
+预览阈值 400：已完成
+Merger 参数双语：已完成
+模型加载 OOM / 分块 assign：已修复并验证
 
-Batch 2 正式详细设计：已完成
-Batch 2 .scratch ticket 拆分：已完成（原 12 个核心 tickets + 末尾 Ticket 13）
-Batch 2 弱模型施工引导：已完成
-Batch 2 最终审计补充：已完成
---options-json 权威参数文档：已创建（v1.0）
-<<<<<<< Updated upstream
-Ticket 13 Loss 窗口日志设计：已完成，运行时代码未开始
-Batch 2 运行时代码：开发中
-Batch 2 Windows FP32 验收：未完成
-=======
-Batch 2 Ticket 01 (基线与 Fixtures)：已完成 (macOS 无 GPU 轻量验证 PASS, 85/85 测试通过)
-Batch 2 Ticket 02 (Metadata Schema & Identity)：已完成 (macOS 轻量验证 PASS, 94/94 测试通过)
-Batch 2 Ticket 03 (Lightweight Analyzer Core)：已完成 (macOS 轻量验证 PASS, 104/104 测试通过)
-Batch 2 Ticket 04 (Analyzer CLI & Atomic Store)：已完成 (macOS 轻量验证 PASS, 114/114 测试通过)
-Batch 2 Ticket 05 (Metadata Loader)：已完成 (macOS 轻量验证 PASS, 122/122 测试通过)
-Batch 2 Ticket 06 (Sampling Policy API & Legacy Adapters)：已完成 (macOS 轻量验证 PASS, 130/130 测试通过)
-Batch 2 Ticket 07 (Pose-balanced Sampling)：已完成 (macOS 轻量验证 PASS, 141/141 测试通过)
-Batch 2 Ticket 08 (Quality-aware Weighting)：已完成 (macOS 轻量验证 PASS, 151/151 测试通过)
-Batch 2 Ticket 09 (WeightedIndexHost & Generator Integration)：已完成 (macOS 轻量验证 PASS, 165/165 测试通过)
-Batch 2 Ticket 10 (Config, SAEHD Options, Logging & Fallback Integration)：已完成 (macOS 轻量验证 PASS, 170/170 测试通过)
-Batch 2 Ticket 11 (Master Test Matrix & Windows GPU Acceptance)：已完成 (macOS 轻量验证 PASS, 169/169 测试通过)
-Batch 2 Ticket 12 (Compatibility Docs, Usage Guide & Handoff)：已完成 (macOS 轻量验证 PASS, 169/169 测试通过)
-Batch 2 全部 12 个 Ticket：已收口完毕
-Batch 2 Windows FP32 验收：PENDING-WINDOWS-GPU
->>>>>>> Stashed changes
-
-Python 基线：最低 3.9，推荐 3.11 / 3.12
+Batch 2 Ticket 01—13：已有实现与轻量测试
+Batch 2 独立 Review：FAIL，发现 P0/P1 契约与多进程问题
+Metadata Sampling：NOT PRODUCTION READY
+Windows spawn：未通过真实验收
+Windows FP32 + AdaBelief：PENDING
+Batch 3：BLOCKED BY BATCH 2 REMEDIATION
 ```
 
-Batch 2 最终审计新增冻结内容：
+安全判断：
 
 ```text
-- Unicode/NFC Sample Identity 与 UTF-8 JSON
-- Analyzer v1 姿态、清晰度、曝光、质量公式
-- Loader 状态优先级与 usable_for_sampling
-- training.enabled + metadata_sampling 双 gate
-- --options-json 嵌套配置形状和优先级
-- --options-json 参数文档同步规则
-- Pose/Quality golden values
-- WeightedIndexHost cycle、timeout、统计容差
-- Windows 性能量化验收门槛
-- 保存日志恢复窗口 mean，保留 last/count 诊断
+legacy_random：继续回归和使用
+legacy_uniform_yaw：继续回归和使用
+Faceset Analyzer：可用于报告与开发验证
+pose_balanced：修复前不用于正式训练结论
+quality_pose_balanced：修复前不用于正式训练结论
 ```
 
-Batch 2 已确定边界：
+---
+
+## 3. Batch 2 独立 Review 发现
+
+### P0 阻断
+
+1. Analyzer 与 Loader 的 yaw/pitch bucket 名称不一致；
+2. 旧使用指南的 options JSON 缺少顶层 `enhancements`；
+3. 旧示例没有同时开启 `training.enabled` 和 `metadata_sampling`；
+4. 文档宣称 `sampling.src/dst`，代码只解析扁平全局配置；
+5. WeightedIndexHostClient 在 Windows spawn 下存在 `_host_ref` 序列化风险。
+
+### P1 高优先级
+
+1. `--workers` 参数未实际使用；
+2. `--strong-fingerprint` 参数未实际使用；
+3. 同名替换图片可能继续使用旧 Metadata；
+4. Incremental summary 使用旧顶层字段；
+5. Loss Window 多包含保存后一个 batch；
+6. Optional fallback 可能吞掉 SampleLoader 核心异常。
+
+---
+
+## 4. 修复 Ticket 入口
+
+按弱模型施工标准新增：
+
+1. [Ticket 14：统一 Metadata Bucket Schema 与端到端契约](../.scratch/batch2-training-data-and-sampling/issues/14-unify-metadata-bucket-schema-and-e2e-contract.md)
+2. [Ticket 15：修复 options-json 与 SRC/DST Sampling 配置](../.scratch/batch2-training-data-and-sampling/issues/15-fix-options-json-and-src-dst-sampling-contract.md)
+3. [Ticket 16：修复 WeightedIndexHost Windows spawn](../.scratch/batch2-training-data-and-sampling/issues/16-fix-weighted-index-host-windows-spawn.md)
+4. [Ticket 17：实现 Analyzer Workers、强指纹与 stale detection](../.scratch/batch2-training-data-and-sampling/issues/17-implement-analyzer-workers-strong-fingerprint-and-stale-detection.md)
+5. [Ticket 18：修复 Incremental Summary 与 Report Schema](../.scratch/batch2-training-data-and-sampling/issues/18-fix-incremental-summary-and-report-schema.md)
+6. [Ticket 19：修复 Loss Window 保存边界](../.scratch/batch2-training-data-and-sampling/issues/19-fix-loss-window-save-boundary-and-observability.md)
+7. [Ticket 20：收窄 Fallback 异常边界](../.scratch/batch2-training-data-and-sampling/issues/20-narrow-fallback-exception-boundaries.md)
+8. [Ticket 21：文档、Handoff 与 Windows GPU 最终验收](../.scratch/batch2-training-data-and-sampling/issues/21-docs-handoff-windows-gpu-final-acceptance.md)
+
+依赖关系：
 
 ```text
-交付：
-- Metadata Schema v1
-- Stable Sample Identity / Dataset Fingerprint
-- Lightweight Faceset Analyzer
-- Analyzer CLI / Atomic Store / Incremental Update
-- Ordinary + Packed Metadata Loader
-- legacy_random / legacy_uniform_yaw
-- pose_balanced
-- quality_pose_balanced
-- WeightedIndexHost / Multi-process Generator
-- Config / Logs / Fallback
-- Windows FP32 + AdaBelief Acceptance
-- Loss Window Logging / Observability（Ticket 13）
+14
+├── 15
+├── 16
+└── 17
+     ↓
+18
 
-明确延期：
-- Dynamic Loss-aware Sampling
-- Identity Geometry / 脸型 Loss
-- Source Shape Template
-- Shape-aware Merge
-- Lion 后续开发
-- FP16 / BF16 正式验收
+19 可独立并行
+
+15 + 16 + 17
+     ↓
+20
+
+14—20 全部完成
+     ↓
+21
 ```
 
-Ticket 13 决策：
+当前 frontier：
 
 ```text
-当前保存日志显示 loss_history[-1]，属于最后一个 batch loss。
-Ticket 13 恢复“上次成功保存以来”的窗口 arithmetic mean 作为主显示值，
-同时保留 last / median / count 诊断。
-
-该 Ticket 不修改 SAEHD Loss、optimizer、学习率、采样概率、checkpoint 或预览 history。
-默认执行顺序为 Ticket 12 → Ticket 13 → Batch 2 最终收口。
+Ticket 14
+Ticket 19（允许另一个独立 Agent 并行）
 ```
 
-当前下一步：
+---
+
+## 5. Faceset Analyzer 使用结论
+
+Faceset Analyzer 不是所有训练都必须执行，也不等同于 XSeg。
+
+只有启用：
 
 ```text
-<<<<<<< Updated upstream
-继续按实际开发 frontier 执行 Batch 2 核心 Ticket。
-Ticket 13 不应打断当前 Metadata/Sampling 开发，默认放在末尾实施。
-=======
-进入 Batch 3 (Multi-objective Loss Hook & Identity Appearance) 前置方案设计与规格书搭建。
->>>>>>> Stashed changes
+pose_balanced
+quality_pose_balanced
 ```
 
-执行规则：
+才需要先分析 faceset。
 
-- 弱模型一次只领取一个 Ticket。
-- 每个 Ticket 必须同时提供当前 Ticket、AGENTS.md、Agent 规范、最终审计契约和前置 summary。
-- 涉及训练参数的 Ticket 必须同时阅读并同步 `docs/implementation/options-json-training-configuration-reference.md`。
-- 新增、删除、重命名或改变训练参数语义时，必须在同一提交/PR 更新权威参数文档、示例、变更记录和测试。
-- 不得直接跳到 WeightedIndexHost 或 SAEHD 接入。
-- 先固定 ordinary/Packed fixture、legacy 索引分布和 Generator tensor contract。
-- 所有新增能力默认关闭。
-- Batch 2 不修改 SAEHD 网络、Loss、checkpoint、DFM 或 Merge。
-- Metadata 不写回图片，不修改 faceset.pak，不自动删除样本。
-- 图像 I/O 走 `cv2ex`，文本使用 UTF-8，路径必须兼容 Unicode。
-- `--options-json` 配置不得被后续交互静默覆盖。
-- macOS/CPU 轻量测试不能代替 Windows GPU 真实训练。
-- 完整 `done` 必须通过 FP32 + AdaBelief、多进程、ordinary/Packed、fallback、save/exit/resume 和性能记录。
-- Ticket 09、10 完成后必须由较强模型或人工进行独立 review。
-- Ticket 13 必须证明窗口 mean 与离线重算一致，保存失败不消费窗口，恢复训练不混入旧 history。
-- 每个 ticket 完成后写入 `.scratch/batch2-training-data-and-sampling/reports/`。
+SRC 和 DST 需要分别分析，但同一个 aligned faceset 被多个模型复用时不需要重复分析。faceset 新增、删除、替换、重新 Extract/Align 或重新 Pack 后需要更新 Metadata。
 
-维护规则：
+当前修复完成前：
 
-- 每次重要阶段结束时新建带时间戳 handoff。
-- 更新本文件，使其始终指向最新 handoff。
-- 不删除历史 handoff。
-- handoff 必须明确实际文件、函数、测试结果、风险和下一步。
+- Analyzer 可以生成 Metadata 和报告；
+- 不得仅凭 `effective: pose_balanced` 判断真实姿态采样生效；
+- 正式训练继续使用 legacy。
+
+---
+
+## 6. Agent 开工必读顺序
+
+任何 Agent 领取 Ticket 14—21 前必须依次阅读：
+
+1. 根目录 `AGENTS.md`
+2. 本 `.handoff/current.md`
+3. 最新 handoff
+4. `.scratch/batch2-training-data-and-sampling/spec.md`
+5. 独立 Review 总计划
+6. 当前 Ticket
+7. 当前 Ticket 所有 `Blocked by` summary
+8. Ticket 指定的真实源码
+9. `docs/implementation/options-json-training-configuration-reference.md`（涉及训练配置时）
+
+不得只把 Ticket 标题发给弱模型。
+
+---
+
+## 7. 执行规则
+
+- 弱模型一次只领取一个 Ticket；
+- Ticket 14 必须先于 15、16、17、18；
+- Ticket 19 可独立并行；
+- Ticket 16、20 完成后必须强模型或人工独立 Review；
+- 测试必须走真实 Analyzer record，不得手工构造错误旧 Schema；
+- 多进程必须使用 spawn 测试和 `debug=False` Generator；
+- 不得用 broad fallback 吞掉核心错误；
+- 不得修改 SAEHD 网络、Loss、optimizer、DFM、Merge 或 pak 格式；
+- 所有新增能力继续默认关闭；
+- macOS 轻量测试不能代替 Windows GPU；
+- 未执行 Windows 时不得写正式 done；
+- 每个 Ticket 完成后必须生成同名 summary。
+
+---
+
+## 8. 最终完成定义
+
+Batch 2 只有同时满足以下条件才能重新签发 DONE：
+
+```text
+Ticket 14—20 全部 PASS
++
+Analyzer → Loader → Policy E2E PASS
++
+Canonical bucket PASS
++
+Stale signature PASS
++
+Incremental == Force Full
++
+Windows spawn PASS
++
+Windows FP32 + AdaBelief PASS
++
+Ordinary + Packed PASS
++
+四种 mode PASS
++
+SRC/DST side config PASS
++
+Fallback boundary PASS
++
+Save / Exit / Resume PASS
++
+Loss Window 离线重算一致
++
+文档与 Handoff 一致
+```
+
+Windows 未执行时最多状态：
+
+```text
+PASS-MACOS-LIGHTWEIGHT
+PASS-SPAWN-SIMULATION
+PENDING-WINDOWS-GPU
+```
+
+---
+
+## 9. 历史 Batch 2 入口
+
+历史设计与实现仍需保留：
+
+- [Batch 2 详细设计](handoff-20260727-batch2-detailed-design.md)
+- [Ticket 01 基线](handoff-20260729-batch2-ticket01-baseline.md)
+- [Ticket 02 Metadata Schema](handoff-20260729-batch2-ticket02-metadata-schema.md)
+- [Ticket 03 Analyzer Core](handoff-20260729-batch2-ticket03-analyzer-core.md)
+- [Ticket 04 Analyzer CLI](handoff-20260729-batch2-ticket04-analyzer-cli.md)
+- [Ticket 05 Metadata Loader](handoff-20260729-batch2-ticket05-metadata-loader.md)
+- [Ticket 06 Sampling Policy](handoff-20260729-batch2-ticket06-sampling-policy.md)
+- [Ticket 07 Pose-balanced](handoff-20260729-batch2-ticket07-pose-balanced-sampling.md)
+- [Ticket 08 Quality Weighting](handoff-20260729-batch2-ticket08-quality-weighting.md)
+- [Ticket 09 WeightedIndexHost](handoff-20260729-batch2-ticket09-weighted-index-host.md)
+- [Ticket 10 SAEHD/Config/Fallback](handoff-20260729-batch2-ticket10-config-saehd-logging.md)
+- [Ticket 11 Master Matrix](handoff-20260729-batch2-ticket11-master-matrix.md)
+- [Ticket 12 Docs/Handoff](handoff-20260729-batch2-ticket12-docs-and-handoff.md)
+- [Ticket 13 Loss Window](handoff-20260729-ticket13-loss-window-logging.md)
+- [`--options-json` 权威参考交接](handoff-20260729-options-json-reference.md)
+
+历史文档用于理解实现过程，不覆盖当前独立 Review 结论。

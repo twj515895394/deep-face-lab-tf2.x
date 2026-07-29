@@ -76,13 +76,29 @@ python -m unittest <relevant tests>
 
 ## 7. `--options-json`
 
-仓库已支持从 CLI 向 `ModelBase` 注入训练配置。后续新增训练配置必须考虑：
+仓库已支持从 CLI 向 `ModelBase` 注入训练配置。权威参数文档：
+
+- `docs/implementation/options-json-training-configuration-reference.md`
+
+后续新增、删除、重命名或修改任何训练参数时，必须在同一提交或同一 PR 中同步更新该文档、参数示例、变更记录和对应测试。
+
+新增训练配置必须考虑：
 
 - 无 `--options-json` 时旧交互行为不变；
 - 非空 `--options-json` 时不应再次用交互覆盖显式值；
 - 已保存配置、options JSON 和交互输入的优先级必须写入测试；
 - 嵌套配置必须保持 JSON 类型，不自行转换成不可兼容字符串；
-- 损坏 options JSON 不得被伪装成普通 optional Metadata 缺失。
+- 损坏 options JSON 不得被伪装成普通 optional Metadata 缺失；
+- 新字段必须在权威文档中登记 JSON Path、类型、默认值、范围、状态、持久化和回退语义；
+- 未同步权威文档的训练参数 Ticket/PR 不得标记 resolved。
+
+每个相关 Ticket summary 必须写明：
+
+```text
+--options-json 文档同步：PASS / NA / BLOCKED
+文档版本：vX.Y
+修改章节：...
+```
 
 ## 8. Batch 2 特别入口
 
@@ -91,7 +107,8 @@ Batch 2 开发还必须阅读：
 1. `.scratch/batch2-training-data-and-sampling/spec.md`
 2. `.scratch/batch2-training-data-and-sampling/AGENT_IMPLEMENTATION_GUIDE.md`
 3. `.scratch/batch2-training-data-and-sampling/FINAL_AUDIT_CONTRACTS.md`
-4. 当前 Ticket 与前置 summary
+4. `docs/implementation/options-json-training-configuration-reference.md`
+5. 当前 Ticket 与前置 summary
 
 `FINAL_AUDIT_CONTRACTS.md` 冻结 Unicode、Analyzer v1、配置优先级、采样数值和量化验收门槛，不能跳过。
 
@@ -104,6 +121,7 @@ Batch 2 开发还必须阅读：
 - 命令和测试状态；
 - legacy 回归；
 - Unicode/UTF-8 验证；
+- `--options-json` 文档同步状态；
 - Windows/GPU 待办；
 - 风险和下一 Ticket 可依赖接口。
 

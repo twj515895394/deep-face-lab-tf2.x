@@ -216,9 +216,13 @@ class FacesetAnalyzer:
             dataset=dataset_meta,
             analysis_config={
                 "pose": {
+                    "bucket_contract_version": 1,
+                    "canonical_yaw_buckets": list(YAW_BUCKET_NAMES),
+                    "canonical_pitch_buckets": list(PITCH_BUCKET_NAMES),
                     "yaw_thresholds": list(self.config.pose_config.yaw_thresholds),
                     "pitch_thresholds": list(self.config.pose_config.pitch_thresholds),
                 },
+
                 "quality": {
                     "dark_threshold": self.config.quality_config.dark_threshold,
                     "bright_threshold": self.config.quality_config.bright_threshold,

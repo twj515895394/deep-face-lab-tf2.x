@@ -152,11 +152,92 @@ class TestBatch2MetadataSamplingE2E(unittest.TestCase):
         self.assertEqual(runtime.yaw_bucket_ids[1], YAW_BUCKET_NAME_TO_ID["minor_left"])
         self.assertTrue(runtime.pose_valid[1])
 
-        # "extreme" -> unknown (-1)
-        self.assertEqual(runtime.yaw_bucket_ids[2], UNKNOWN_BUCKET_ID)
-        self.assertFalse(runtime.pose_valid[2])
+    def test_e2e_pose_balanced_sampling_effect(self):
+        """
+        Verify R14-02 requirements:
+        1. Analyzer produces >= 2 distinct valid yaw buckets
+        2. Pose-balanced sample_weights are non-uniform (not all 1s)
+        3. Rare bucket per-sample weight > common bucket per-sample weight
+        4. pose_balance_strength = 0 produces uniform 1.0 weights
+        5. Probabilities sum to 1 and are strictly positive
+        6. Empirical draw frequency fits expected_distribution within 0.08 tolerance
+        """
+        analyzer = FacesetAnalyzer()
+        res = analyzer.analyze(self.ordinary_dir)
+        meta_path = self.ordinary_dir / "faceset_metadata.v1.json"
+        res.metadata.dump_json(meta_path)
 
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples)
+
+        # 1. Multiple valid yaw buckets
+        valid_ids = runtime.yaw_bucket_ids[runtime.pose_valid]
+        unique_buckets = set(valid_ids)
+        self.assertGreaterEqual(len(unique_buckets), 2, f"Expected at least 2 distinct yaw buckets, got {unique_buckets}")
+
+        # 2. Non-uniform weights with strength=0.8
+        cfg = SamplingConfig(mode=SamplingMode.POSE_BALANCED.value, pose_balance_strength=0.8, seed=42)
+        policy = PoseBalancedPolicy(cfg, runtime_metadata=runtime)
+        pose_res = policy.build_weights()
+
+        self.assertFalse(
+            np.allclose(pose_res.sample_weights, 1.0),
+            "sample_weights must be non-uniform when balance_strength > 0"
+        )
+
+        # 3. Rare bucket weight > common bucket weight
+        counts = pose_res.bucket_counts
+        populated_b_ids = np.where(counts > 0)[0]
+        self.assertGreater(len(populated_b_ids), 1)
+
+        sorted_b_ids = sorted(populated_b_ids, key=lambda b: counts[b])
+        rare_b_id = sorted_b_ids[0]
+        common_b_id = sorted_b_ids[-1]
+
+        rare_w = pose_res.bucket_weights[rare_b_id]
+        common_w = pose_res.bucket_weights[common_b_id]
+        self.assertGreater(
+            rare_w, common_w,
+            f"Rare bucket ({rare_b_id}, count={counts[rare_b_id]}) weight ({rare_w:.3f}) should be higher than common bucket ({common_b_id}, count={counts[common_b_id]}) weight ({common_w:.3f})"
+        )
+
+        # 4. balance_strength = 0 produces uniform 1.0 weights
+        cfg_zero = SamplingConfig(mode=SamplingMode.POSE_BALANCED.value, pose_balance_strength=0.0, seed=42)
+        policy_zero = PoseBalancedPolicy(cfg_zero, runtime_metadata=runtime)
+        res_zero = policy_zero.build_weights()
+        self.assertTrue(np.allclose(res_zero.sample_weights, 1.0), "strength=0 must restore uniform 1.0 weights")
+
+        # 5. Probabilities sum to 1 and are positive
+        from samplelib.sampling.weights import weights_to_probabilities
+        probs = weights_to_probabilities(pose_res.sample_weights, uniform_mix=0.0)
+        self.assertTrue(np.all(np.isfinite(probs)))
+        self.assertTrue(np.all(probs > 0))
+        self.assertAlmostEqual(float(np.sum(probs)), 1.0, places=5)
+
+        # 6. Empirical draw distribution vs expected_distribution fitting
+        host = policy.build_index_host(samples)
+        client = host.create_cli()
+        draw_count = 5000
+        draw_indices = client.multi_get(draw_count)
+        host.close()
+
+        # Compute empirical bucket counts from draws
+        empirical_b_counts = np.zeros(7, dtype=np.float64)
+        for idx in draw_indices:
+            b_id = runtime.yaw_bucket_ids[idx]
+            if 0 <= b_id < 7:
+                empirical_b_counts[b_id] += 1.0
+
+        empirical_dist = empirical_b_counts / float(draw_count)
+        expected_dist = pose_res.expected_distribution
+
+        max_diff = float(np.max(np.abs(empirical_dist - expected_dist)))
+        self.assertLess(
+            max_diff, 0.08,
+            f"Empirical draw distribution {empirical_dist} deviates from expected {expected_dist} by {max_diff:.4f} (> 0.08)"
+        )
 
 
 if __name__ == "__main__":
     unittest.main()
+

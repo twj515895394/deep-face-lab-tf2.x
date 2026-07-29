@@ -6,10 +6,17 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from samplelib.metadata.contracts import (
+    LEGACY_PITCH_ALIASES,
+    LEGACY_YAW_ALIASES,
     PITCH_BUCKET_NAME_TO_ID,
     UNKNOWN_BUCKET_ID,
     YAW_BUCKET_NAME_TO_ID,
     get_pitch_bucket_id,
+    get_record_image_valid,
+    get_record_pitch_bucket,
+    get_record_pose_valid,
+    get_record_quality_valid,
+    get_record_yaw_bucket,
     get_yaw_bucket_id,
 )
 from samplelib.metadata.fingerprint import build_dataset_fingerprint, build_sample_signature
@@ -169,6 +176,15 @@ class FacesetMetadataLoader:
         if len(duplicate_ids) > 0:
             warnings.append(f"Detected {len(duplicate_ids)} duplicate sample_id records in metadata.")
 
+        alias_yaw_count = 0
+        alias_yaw_examples = []
+        alias_pitch_count = 0
+        alias_pitch_examples = []
+        unknown_yaw_count = 0
+        unknown_yaw_examples = []
+        unknown_pitch_count = 0
+        unknown_pitch_examples = []
+
         # 3. Identity mapping against runtime samples
         is_packed = any(getattr(s, "_filename_offset_size", None) is not None for s in samples)
         matched_count = 0
@@ -202,32 +218,87 @@ class FacesetMetadataLoader:
             if sid in meta_by_id:
                 rec = meta_by_id[sid]
                 matched_count += 1
-                metadata_valid[i] = rec.get("valid", True)
 
-                # Quality
-                q_info = rec.get("quality", {})
-                if isinstance(q_info, dict) and "quality_score" in q_info and q_info["quality_score"] is not None:
+                # Check record structural validity
+                if not isinstance(rec, dict) or not (
+                    isinstance(rec.get("pose"), dict)
+                    or isinstance(rec.get("quality"), dict)
+                    or isinstance(rec.get("image"), dict)
+                    or "valid" in rec
+                ):
+                    metadata_valid[i] = False
+                    continue
+
+                metadata_valid[i] = True
+
+                # Quality validity and extraction
+                if get_record_quality_valid(rec):
                     try:
-                        quality_scores[i] = float(q_info["quality_score"])
+                        q_score = float(rec["quality"]["quality_score"])
+                        quality_scores[i] = q_score
                         quality_valid[i] = True
-                    except (ValueError, TypeError):
+                    except (ValueError, TypeError, KeyError):
                         pass
 
-                # Pose
+                # Pose validity and extraction using contract accessors
+                norm_yaw, y_id, y_valid = get_record_yaw_bucket(rec)
+                norm_pitch, p_id, p_valid = get_record_pitch_bucket(rec)
+
                 p_info = rec.get("pose", {})
-                if isinstance(p_info, dict) and p_info.get("valid", False):
-                    yaw_str = p_info.get("yaw_bucket")
-                    pitch_str = p_info.get("pitch_bucket")
+                if isinstance(p_info, dict):
+                    raw_y_str = p_info.get("yaw_bucket")
+                    if isinstance(raw_y_str, str):
+                        raw_y_clean = raw_y_str.strip()
+                        if raw_y_clean in LEGACY_YAW_ALIASES:
+                            alias_yaw_count += 1
+                            if len(alias_yaw_examples) < 5:
+                                alias_yaw_examples.append(f"{key}: '{raw_y_clean}' -> '{norm_yaw}'")
+                        elif not y_valid and raw_y_clean != "unknown":
+                            unknown_yaw_count += 1
+                            if len(unknown_yaw_examples) < 5:
+                                unknown_yaw_examples.append(f"{key}: '{raw_y_clean}'")
 
-                    y_id, y_valid = get_yaw_bucket_id(yaw_str)
-                    p_id, p_valid = get_pitch_bucket_id(pitch_str)
+                    raw_p_str = p_info.get("pitch_bucket")
+                    if isinstance(raw_p_str, str):
+                        raw_p_clean = raw_p_str.strip()
+                        if raw_p_clean in LEGACY_PITCH_ALIASES:
+                            alias_pitch_count += 1
+                            if len(alias_pitch_examples) < 5:
+                                alias_pitch_examples.append(f"{key}: '{raw_p_clean}' -> '{norm_pitch}'")
+                        elif not p_valid and raw_p_clean != "unknown":
+                            unknown_pitch_count += 1
+                            if len(unknown_pitch_examples) < 5:
+                                unknown_pitch_examples.append(f"{key}: '{raw_p_clean}'")
 
-                    if y_valid:
-                        yaw_bucket_ids[i] = y_id
-                        pose_valid[i] = True
+                is_pose_record_valid = get_record_pose_valid(rec)
+                if y_valid and is_pose_record_valid:
+                    yaw_bucket_ids[i] = y_id
+                    pose_valid[i] = True
+                elif y_valid and not is_pose_record_valid:
+                    yaw_bucket_ids[i] = y_id
+                    pose_valid[i] = False
 
-                    if p_valid:
-                        pitch_bucket_ids[i] = p_id
+                if p_valid:
+                    pitch_bucket_ids[i] = p_id
+
+        # Collect bounded warnings
+        if alias_yaw_count > 0:
+            warnings.append(
+                f"LEGACY_YAW_ALIAS_USED count={alias_yaw_count} examples=[{', '.join(alias_yaw_examples)}]"
+            )
+        if alias_pitch_count > 0:
+            warnings.append(
+                f"LEGACY_PITCH_ALIAS_USED count={alias_pitch_count} examples=[{', '.join(alias_pitch_examples)}]"
+            )
+        if unknown_yaw_count > 0:
+            warnings.append(
+                f"UNKNOWN_YAW_BUCKET count={unknown_yaw_count} examples=[{', '.join(unknown_yaw_examples)}]"
+            )
+        if unknown_pitch_count > 0:
+            warnings.append(
+                f"UNKNOWN_PITCH_BUCKET count={unknown_pitch_count} examples=[{', '.join(unknown_pitch_examples)}]"
+            )
+
 
 
         matched_ratio = matched_count / float(N)

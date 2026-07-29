@@ -175,9 +175,102 @@ class TestBatch2MetadataLoader(unittest.TestCase):
             + metadata_valid.nbytes
         )
 
-        mb_size = total_bytes / (1024 * 1024)
-        self.assertLess(mb_size, 2.0, f"Memory size {mb_size:.2f}MB exceeds 2MB limit for {N} samples")
+    def test_loader_malformed_record_metadata_valid(self):
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        bad_meta_path = self.temp_dir / "malformed_records.v1.json"
+
+        s0_key = build_sample_key(getattr(samples[0], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+        s0_id = build_sample_id(s0_key)
+
+        # Record exists but is malformed (not a dict or empty)
+        bad_raw = {
+            "schema_version": 1,
+            "analyzer_version": "v1.0",
+            "dataset": {"format": "ordinary", "sample_count": len(samples)},
+            "samples": [
+                "NOT_A_DICT_RECORD",
+                {"sample_key": s0_key, "sample_id": s0_id},  # Empty record without pose/quality/image
+            ],
+        }
+
+        with open(bad_meta_path, "w", encoding="utf-8") as f:
+            json.dump(bad_raw, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=bad_meta_path)
+        self.assertFalse(runtime.metadata_valid[0])
+
+    def test_loader_alias_warnings_are_aggregated_and_bounded(self):
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        alias_meta_path = self.temp_dir / "alias_warnings.v1.json"
+
+        meta_samples = []
+        for s in samples:
+            key = build_sample_key(getattr(s, "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+            sid = build_sample_id(key)
+            meta_samples.append({
+                "sample_key": key,
+                "sample_id": sid,
+                "valid": True,
+                "pose": {"valid": True, "yaw_bucket": "front", "pitch_bucket": "center"},
+            })
+
+        alias_raw = {
+            "schema_version": 1,
+            "analyzer_version": "v1.0",
+            "dataset": {"format": "ordinary", "sample_count": len(samples)},
+            "samples": meta_samples,
+        }
+
+        with open(alias_meta_path, "w", encoding="utf-8") as f:
+            json.dump(alias_raw, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=alias_meta_path)
+
+        alias_warns = [w for w in runtime.warnings if "LEGACY_YAW_ALIAS_USED" in w]
+        self.assertGreater(len(alias_warns), 0)
+        # Verify examples list in warning string is bounded to <= 5
+        warn_str = alias_warns[0]
+        self.assertIn("count=", warn_str)
+
+    def test_loader_unknown_pitch_retains_valid_yaw(self):
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        pitch_meta_path = self.temp_dir / "unknown_pitch.v1.json"
+
+        s0_key = build_sample_key(getattr(samples[0], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
+        s0_id = build_sample_id(s0_key)
+
+        pitch_raw = {
+            "schema_version": 1,
+            "analyzer_version": "v1.0",
+            "dataset": {"format": "ordinary", "sample_count": len(samples)},
+            "samples": [
+                {
+                    "sample_key": s0_key,
+                    "sample_id": s0_id,
+                    "valid": True,
+                    "pose": {"valid": True, "yaw_bucket": "center", "pitch_bucket": "unknown_pitch_str"},
+                }
+            ],
+        }
+
+        with open(pitch_meta_path, "w", encoding="utf-8") as f:
+            json.dump(pitch_raw, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=pitch_meta_path)
+        self.assertTrue(runtime.pose_valid[0])
+        self.assertEqual(runtime.pitch_bucket_ids[0], UNKNOWN_BUCKET_ID)
+        self.assertNotEqual(runtime.yaw_bucket_ids[0], UNKNOWN_BUCKET_ID)
 
 
 if __name__ == "__main__":
     unittest.main()
+

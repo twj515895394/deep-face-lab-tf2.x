@@ -59,16 +59,20 @@ def generate_analyzer_report(
     elapsed_clean = max(0.001, float(elapsed_seconds))
     throughput = round(total_samples / elapsed_clean, 2)
 
+    from samplelib.metadata.contracts import get_record_image_valid, get_record_pose_valid
+
     invalid_details = []
     for s in metadata.samples:
-        if not s.get("valid", True):
+        issues = s.get("issues", [])
+        if len(issues) > 0 or not get_record_image_valid(s) or not get_record_pose_valid(s):
             invalid_details.append({
                 "sample_id": s.get("sample_id"),
                 "sample_key": s.get("sample_key"),
-                "issues": s.get("issues", []),
+                "issues": issues,
             })
             if len(invalid_details) >= max_json_issues:
                 break
+
 
     report = AnalyzerReport(
         created_at=datetime.now(timezone.utc).isoformat(),

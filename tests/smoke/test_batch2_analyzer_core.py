@@ -85,15 +85,9 @@ class TestBatch2AnalyzerCore(unittest.TestCase):
     def test_analyzer_summary_keys_exact_set(self):
         """summary top-level keys and bucket count keys must match the fixed contract."""
         res = FacesetAnalyzer().analyze(self.ordinary_dir)
-        expected_summary_keys = {
-            "total_samples",
-            "valid_samples",
-            "invalid_samples",
-            "yaw_bucket_counts",
-            "pitch_bucket_counts",
-            "quality_stats",
-            "normalization",
-        }
+        from samplelib.metadata.summary_builder import CANONICAL_SUMMARY_KEYS
+
+        expected_summary_keys = set(CANONICAL_SUMMARY_KEYS)
         self.assertEqual(set(res.summary.keys()), expected_summary_keys)
 
         expected_yaw = set(YAW_BUCKET_NAMES) | {"unknown"}

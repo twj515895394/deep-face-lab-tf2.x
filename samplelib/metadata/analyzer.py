@@ -409,12 +409,12 @@ class FacesetAnalyzer:
         from samplelib.metadata.contracts import PITCH_BUCKET_NAMES, YAW_BUCKET_NAMES
         from samplelib.metadata.summary_builder import build_canonical_summary
 
-        # Shared Ticket 14 summary builder (full + incremental must match).
+        # Shared Ticket 18 summary builder (full + incremental must match).
+        # invalid_* counts come from record accessors, not a parallel failures list.
         summary = build_canonical_summary(
             finalized_samples,
             norm_summary,
             samples_len=samples_len,
-            invalid_count=len(failures),
         )
 
         timing = {

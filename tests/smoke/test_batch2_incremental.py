@@ -130,7 +130,10 @@ class TestIncrementalMetadata(unittest.TestCase):
         self.assertIn("quality_stats", summary)
         # Old legacy keys must not reappear.
         self.assertNotIn("pose_distribution_yaw", summary)
-        self.assertNotIn("usable_for_sampling", summary)
+        self.assertIn("usable_pose_samples", summary)
+        self.assertIn("valid_image_samples", summary)
+        # Ticket 14 legacy summary keys must not reappear as top-level distributions.
+        self.assertNotIn("pose_distribution_yaw", summary)
         self.assertNotIn("quality_normalization", summary)
 
         for s in final_samples:

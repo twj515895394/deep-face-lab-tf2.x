@@ -1,3 +1,4 @@
+import copy
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -155,9 +156,9 @@ def reconcile_and_finalize_samples(
     """
     raw_combined: List[dict] = []
 
-    # 1. Add reused records (ensure quality_raw is intact or constructable from legacy fields)
+    # 1. Add reused records (deep copy so Pass 2 cannot mutate plan/old sidecar objects)
     for key in plan.reused_sample_keys:
-        rec = dict(plan.reused_sample_records[key])
+        rec = copy.deepcopy(plan.reused_sample_records[key])
         if "quality_raw" not in rec and "quality" in rec:
             q_old = rec["quality"] if isinstance(rec.get("quality"), dict) else {}
             # Nested image.valid preferred; legacy top-level valid is fallback only.
@@ -181,16 +182,34 @@ def reconcile_and_finalize_samples(
                 }
         raw_combined.append(rec)
 
-    # 2. Add newly analyzed sample records
-    raw_combined.extend(new_analyzed_samples)
+    # 2. Add newly analyzed sample records (also deep-copied for isolation)
+    for rec in new_analyzed_samples:
+        raw_combined.append(copy.deepcopy(rec) if isinstance(rec, dict) else rec)
+
+    # Duplicate sample_key / sample_id is a validation failure (Ticket 18).
+    seen_keys = set()
+    seen_ids = set()
+    for rec in raw_combined:
+        if not isinstance(rec, dict):
+            continue
+        sk = rec.get("sample_key")
+        sid = rec.get("sample_id")
+        if sk is not None:
+            if sk in seen_keys:
+                raise ValueError(f"Duplicate sample_key in incremental reconcile: {sk}")
+            seen_keys.add(sk)
+        if sid is not None:
+            if sid in seen_ids:
+                raise ValueError(f"Duplicate sample_id in incremental reconcile: {sid}")
+            seen_ids.add(sid)
 
     # Sort samples consistently by sample_id
     raw_combined.sort(key=lambda s: str(s.get("sample_id", s.get("sample_key", ""))))
 
-    # 3. Re-run Pass 2 quality normalization
+    # 3. Re-run Pass 2 quality normalization across the full faceset
     finalized_samples, norm_summary = finalize_quality_scores(raw_combined, quality_config)
 
-    # 4. Same canonical summary builder as full Analyzer (Ticket 14 / T17-R2-01).
+    # 4. Same canonical summary builder as full Analyzer (Ticket 18).
     overall_summary = build_canonical_summary(
         finalized_samples,
         norm_summary,

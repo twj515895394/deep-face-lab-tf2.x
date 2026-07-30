@@ -265,3 +265,44 @@ def get_record_pitch_bucket(record: dict) -> Tuple[str, int, bool]:
         b_id, _ = get_pitch_bucket_id(pitch_str)
         return norm_name, b_id, is_valid
     return "unknown", UNKNOWN_BUCKET_ID, False
+
+
+def get_record_usable_for_pose(record: dict) -> bool:
+    """Image valid + pose business-valid (canonical yaw)."""
+    return get_record_image_valid(record) and get_record_pose_valid(record)
+
+
+def get_record_usable_for_quality(record: dict) -> bool:
+    """Image valid + finite quality_score."""
+    return get_record_image_valid(record) and get_record_quality_valid(record)
+
+
+_HARD_INVALID_ISSUE_MARKERS = (
+    "IMAGE_",
+    "DECODE",
+    "SIGNATURE_",
+    "IDENTITY_",
+    "LOAD_ERROR",
+    "READ_ERROR",
+    "NO_RAW",
+    "WORKER_",
+)
+
+
+def is_record_summary_invalid(record: dict) -> bool:
+    """
+    Overall invalid for Analyzer summary (Ticket 18).
+
+    - image invalid → invalid
+    - identity/signature/load hard issues → invalid
+    - pose-only / quality-low alone → NOT overall invalid
+    """
+    if not isinstance(record, dict):
+        return True
+    if not get_record_image_valid(record):
+        return True
+    for issue in (record.get("issues") or []):
+        s = str(issue).upper()
+        if any(m in s for m in _HARD_INVALID_ISSUE_MARKERS):
+            return True
+    return False

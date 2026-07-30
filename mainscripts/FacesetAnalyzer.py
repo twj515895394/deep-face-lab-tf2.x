@@ -81,7 +81,22 @@ def main(
                 )
                 return 7
 
-    # Check faceset format and load samples
+    # Check faceset format and load samples.
+    # SampleLoader caches by path string; Analyzer must see adds/deletes so
+    # invalidate any cache entry for this faceset before load (Ticket 18).
+    try:
+        cache = getattr(SampleLoader, "samples_cache", None)
+        if isinstance(cache, dict):
+            for key in list(cache.keys()):
+                try:
+                    if Path(key).resolve() == input_dir:
+                        del cache[key]
+                except Exception:
+                    if str(input_dir) == str(key):
+                        del cache[key]
+    except Exception:
+        pass
+
     try:
         samples = SampleLoader.load(SampleType.FACE, input_dir)
     except Exception as e:
@@ -90,6 +105,28 @@ def main(
 
     if not samples or len(samples) == 0:
         io.log_err(f"[FacesetAnalyzer] No samples found in directory: {input_dir}")
+        return 3
+
+    # Drop ordinary samples whose backing file no longer exists (deleted between
+    # scans). Packed samples are validated via offset descriptors later.
+    live_samples = []
+    for s in samples:
+        if getattr(s, "_filename_offset_size", None) is not None:
+            live_samples.append(s)
+            continue
+        raw_name = getattr(s, "filename", None)
+        if raw_name is None:
+            continue
+        p = Path(raw_name)
+        if p.is_file():
+            live_samples.append(s)
+            continue
+        cand = input_dir / Path(raw_name).name
+        if cand.is_file():
+            live_samples.append(s)
+    samples = live_samples
+    if not samples:
+        io.log_err(f"[FacesetAnalyzer] No live samples found in directory: {input_dir}")
         return 3
 
     is_packed = any(getattr(s, "_filename_offset_size", None) is not None for s in samples)
@@ -247,6 +284,11 @@ def main(
 
     # Generate report before any formal Sidecar write so strict failures keep
     # the previous Metadata bytes intact.
+    # Plan key-set lengths are the single source for incremental report counters.
+    stale_signature_count = recomputed_count if plan.is_incremental else 0
+    signature_upgraded_count = (
+        1 if any("UPGRADE" in str(r) for r in (plan.reasons or [])) else 0
+    )
     report = generate_analyzer_report(
         metadata=final_metadata,
         dataset_path=input_dir,
@@ -257,6 +299,8 @@ def main(
         recomputed_count=recomputed_count,
         added_count=added_count,
         removed_count=removed_count,
+        stale_signature_count=stale_signature_count,
+        signature_upgraded_count=signature_upgraded_count,
     )
 
     print_console_summary(report)

@@ -1,7 +1,8 @@
 # 当前项目交接入口
 
 > 更新时间：2026-07-30  
-> 当前分支：`codex/batch2-ticket19-loss-window`  
+> 当前分支：`codex/batch03-identity-geometry`  
+> 分支来源：`codex/batch2-ticket19-loss-window`，创建基线提交 `0823d5aea08579610876f5a3b42f9d5fb42df23f`。  
 > 本文件是新会话、新Agent和后续开发者的固定入口。  
 > 当前唯一可执行编码Ticket：`B3-01`。  
 > Batch 4–6已经详细拆票，但均为滚动设计草案，禁止直接编码。
@@ -243,6 +244,7 @@ Visual A-B Result
 ## 8. 当前Frontier
 
 ```text
+开发分支：codex/batch03-identity-geometry
 开发Frontier：B3-01 基线、术语、Tensor/Mask/DType契约与Fixtures
 Batch 3 later tickets：BLOCKED-BY-DAG
 Batch 4–6：ROLLING-DESIGN-DRAFT ONLY

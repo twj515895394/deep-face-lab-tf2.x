@@ -721,6 +721,52 @@ class TestBatch2MetadataLoader(unittest.TestCase):
         self.assertTrue(runtime.pose_valid[3])
         self.assertFalse(runtime.quality_valid[3])
 
+    def test_loader_malformed_sibling_preserves_independent_child_flags(self):
+        """Malformed sibling (pose string) must not zero independent image/landmarks/quality flags.
+
+        Sampling safety still requires metadata_valid & business_valid, so usable masks stay false.
+        Existing pose='BROKEN' + quality={} still yields metadata_valid=False.
+        """
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        s0_key = build_sample_key(
+            getattr(samples[0], "filename"), is_packed=False, faceset_root=self.ordinary_dir
+        )
+        s0_id = build_sample_id(s0_key)
+
+        raw = {
+            "schema_version": 1,
+            "dataset": {"format": "ordinary", "sample_count": 1},
+            "samples": [{
+                "sample_key": s0_key,
+                "sample_id": s0_id,
+                "image": {"valid": True},
+                "landmarks": {"valid": True},
+                "pose": "BROKEN",
+                "quality": {"quality_score": 0.8},
+            }],
+        }
+        path = self.temp_dir / "malformed_sibling_independent.v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(raw, f)
+
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
+
+        self.assertTrue(bool(runtime.record_matched[0]))
+        self.assertFalse(bool(runtime.metadata_valid[0]))
+        self.assertTrue(bool(runtime.image_valid[0]))
+        self.assertTrue(bool(runtime.landmarks_valid[0]))
+        self.assertTrue(bool(runtime.quality_valid[0]))
+        self.assertFalse(bool(runtime.pose_valid[0]))
+        self.assertAlmostEqual(float(runtime.quality_scores[0]), 0.8, places=5)
+
+        usable_pose = runtime.usable_for_pose_sampling()
+        usable_quality = runtime.usable_for_quality_sampling()
+        self.assertFalse(bool(usable_pose[0]))
+        self.assertFalse(bool(usable_quality[0]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -306,13 +306,9 @@ class FacesetMetadataLoader:
                 record_matched[i] = True
                 matched_count += 1
 
-                # Structural gate: known children present and all of them are mappings.
-                # Business validity of image/landmarks/pose/quality remains independent.
-                if not is_record_structurally_valid(rec):
-                    metadata_valid[i] = False
-                    continue
-
-                metadata_valid[i] = True
+                # Independent child flags first (R5-01): a malformed sibling must not
+                # prevent safe accessors from filling other diagnostic arrays.
+                # Sampling safety remains metadata_valid & business_valid.
                 image_valid[i] = get_record_image_valid(rec)
                 landmarks_valid[i] = get_record_landmarks_valid(rec)
 
@@ -365,6 +361,9 @@ class FacesetMetadataLoader:
 
                 if p_valid:
                     pitch_bucket_ids[i] = p_id
+
+                # Structural gate is independent of per-child business validity.
+                metadata_valid[i] = is_record_structurally_valid(rec)
 
         # Collect bounded match-time warnings (one line per issue family).
         if duplicate_collision_count > 0:

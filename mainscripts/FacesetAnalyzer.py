@@ -172,7 +172,11 @@ def main(
                     is_packed=is_packed,
                 )
 
-            final_samples, summary = reconcile_and_finalize_samples(plan, newly_analyzed_records)
+            final_samples, summary = reconcile_and_finalize_samples(
+                plan,
+                newly_analyzed_records,
+                quality_config=analyzer_config.quality_config,
+            )
 
             # Recompute fingerprint from final sample signatures
             from samplelib.metadata.fingerprint import SampleSignature

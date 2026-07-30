@@ -167,12 +167,19 @@ class TestBatch2MetadataSamplingE2E(unittest.TestCase):
 
     def test_e2e_legacy_alias_sidecar_reading(self):
         """
-        Verify Loader reads legacy alias bucket names (e.g. front -> center, slight_left -> minor_left)
+        Trusted records with legacy alias bucket names normalize on load.
+        Unsigned (no signature) records stay untrusted and do not load pose.
         """
+        from samplelib.metadata.fingerprint import (
+            SIGNATURE_MODE_QUICK,
+            build_signature_from_sample,
+        )
         from samplelib.metadata.identity import build_sample_id, build_sample_key
+        from samplelib.metadata.contracts import UNKNOWN_BUCKET_ID
 
         samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
         meta_path = self.temp_dir / "legacy_alias_metadata.v1.json"
+        unsigned_path = self.temp_dir / "legacy_alias_unsigned.v1.json"
 
         s0_key = build_sample_key(getattr(samples[0], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
         s0_id = build_sample_id(s0_key)
@@ -181,28 +188,45 @@ class TestBatch2MetadataSamplingE2E(unittest.TestCase):
         s2_key = build_sample_key(getattr(samples[2], "filename"), is_packed=False, faceset_root=self.ordinary_dir)
         s2_id = build_sample_id(s2_key)
 
+        sig0 = build_signature_from_sample(
+            samples[0], s0_key, self.ordinary_dir, mode=SIGNATURE_MODE_QUICK
+        ).to_dict()
+        sig1 = build_signature_from_sample(
+            samples[1], s1_key, self.ordinary_dir, mode=SIGNATURE_MODE_QUICK
+        ).to_dict()
+        sig2 = build_signature_from_sample(
+            samples[2], s2_key, self.ordinary_dir, mode=SIGNATURE_MODE_QUICK
+        ).to_dict()
+
         alias_raw = {
             "schema_version": 1,
             "analyzer_version": "v1.0",
             "dataset": {"format": "ordinary", "sample_count": len(samples)},
+            "analysis_config": {"signature": {"mode": "quick"}},
             "samples": [
                 {
                     "sample_key": s0_key,
                     "sample_id": s0_id,
-                    "valid": True,
+                    "signature": sig0,
                     "pose": {"valid": True, "yaw_bucket": "front", "pitch_bucket": "center"},
+                    "image": {"valid": True},
+                    "landmarks": {"valid": True},
                 },
                 {
                     "sample_key": s1_key,
                     "sample_id": s1_id,
-                    "valid": True,
+                    "signature": sig1,
                     "pose": {"valid": True, "yaw_bucket": "slight_left", "pitch_bucket": "up"},
+                    "image": {"valid": True},
+                    "landmarks": {"valid": True},
                 },
                 {
                     "sample_key": s2_key,
                     "sample_id": s2_id,
-                    "valid": True,
+                    "signature": sig2,
                     "pose": {"valid": True, "yaw_bucket": "extreme", "pitch_bucket": "down"},
+                    "image": {"valid": True},
+                    "landmarks": {"valid": True},
                 },
             ],
         }
@@ -219,6 +243,29 @@ class TestBatch2MetadataSamplingE2E(unittest.TestCase):
         # "slight_left" -> "minor_left" (ID 2)
         self.assertEqual(runtime.yaw_bucket_ids[1], YAW_BUCKET_NAME_TO_ID["minor_left"])
         self.assertTrue(runtime.pose_valid[1])
+
+        # Unsigned records: id may match for diagnostics, pose must stay neutral.
+        unsigned_raw = {
+            "schema_version": 1,
+            "analyzer_version": "v1.0",
+            "dataset": {"format": "ordinary", "sample_count": len(samples)},
+            "samples": [
+                {
+                    "sample_key": s0_key,
+                    "sample_id": s0_id,
+                    "pose": {"valid": True, "yaw_bucket": "front", "pitch_bucket": "center"},
+                },
+            ],
+        }
+        with open(unsigned_path, "w", encoding="utf-8") as f:
+            json.dump(unsigned_raw, f)
+        unsigned_rt = FacesetMetadataLoader.load(
+            self.ordinary_dir, samples, metadata_path=unsigned_path
+        )
+        self.assertGreaterEqual(unsigned_rt.id_matched_count, 1)
+        self.assertEqual(unsigned_rt.trusted_matched_count, 0)
+        self.assertEqual(int(unsigned_rt.yaw_bucket_ids[0]), UNKNOWN_BUCKET_ID)
+        self.assertFalse(bool(unsigned_rt.pose_valid[0]))
 
     def test_e2e_pose_balanced_sampling_effect(self):
         """

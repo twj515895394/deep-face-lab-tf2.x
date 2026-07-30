@@ -1,4 +1,3 @@
-import math
 import multiprocessing
 import os
 import time
@@ -408,45 +407,15 @@ class FacesetAnalyzer:
         dataset_fingerprint = build_dataset_fingerprint(signatures)
 
         from samplelib.metadata.contracts import PITCH_BUCKET_NAMES, YAW_BUCKET_NAMES
+        from samplelib.metadata.summary_builder import build_canonical_summary
 
-        yaw_counts = {b: 0 for b in YAW_BUCKET_NAMES}
-        yaw_counts["unknown"] = 0
-        pitch_counts = {b: 0 for b in PITCH_BUCKET_NAMES}
-        pitch_counts["unknown"] = 0
-        valid_quality_scores = []
-
-        for s in finalized_samples:
-            y_b = s["pose"].get("yaw_bucket", "unknown")
-            p_b = s["pose"].get("pitch_bucket", "unknown")
-            yaw_counts[y_b] = yaw_counts.get(y_b, 0) + 1
-            pitch_counts[p_b] = pitch_counts.get(p_b, 0) + 1
-
-            q_val = s["quality"].get("quality_score")
-            if q_val is not None and math.isfinite(q_val):
-                valid_quality_scores.append(q_val)
-
-        if len(valid_quality_scores) > 0:
-            q_stats = {
-                "min": float(np.min(valid_quality_scores)),
-                "p05": float(np.percentile(valid_quality_scores, 5)),
-                "median": float(np.median(valid_quality_scores)),
-                "p95": float(np.percentile(valid_quality_scores, 95)),
-                "max": float(np.max(valid_quality_scores)),
-            }
-        else:
-            q_stats = {"min": 0.5, "p05": 0.5, "median": 0.5, "p95": 0.5, "max": 0.5}
-
-        # Keep top-level summary keys stable (Ticket 14 contract).
-        # workers / signature mode live in analysis_config + timing.
-        summary = {
-            "total_samples": samples_len,
-            "valid_samples": samples_len - len(failures),
-            "invalid_samples": len(failures),
-            "yaw_bucket_counts": yaw_counts,
-            "pitch_bucket_counts": pitch_counts,
-            "quality_stats": q_stats,
-            "normalization": norm_summary,
-        }
+        # Shared Ticket 14 summary builder (full + incremental must match).
+        summary = build_canonical_summary(
+            finalized_samples,
+            norm_summary,
+            samples_len=samples_len,
+            invalid_count=len(failures),
+        )
 
         timing = {
             "total_seconds": float(time.time() - t_start),

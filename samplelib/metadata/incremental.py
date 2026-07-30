@@ -1,8 +1,9 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from samplelib.metadata.quality import finalize_quality_scores
+from samplelib.metadata.quality import FacesetQualityConfig, finalize_quality_scores
 from samplelib.metadata.schema import SCHEMA_VERSION_CURRENT, FacesetMetadataV1
+from samplelib.metadata.summary_builder import build_canonical_summary
 
 
 @dataclass
@@ -143,11 +144,12 @@ def build_incremental_plan(
 def reconcile_and_finalize_samples(
     plan: IncrementalPlan,
     new_analyzed_samples: List[dict],
+    quality_config: Optional[FacesetQualityConfig] = None,
 ) -> Tuple[List[dict], dict]:
     """
     Reconcile reused sample records and newly analyzed sample records.
     Re-runs Pass 2 robust percentile quality normalization across the entire faceset
-    and computes full dataset summary.
+    and builds the same Ticket 14 canonical summary as full Analyzer.
 
     Returns:
         (final_samples_list, summary_dict)
@@ -158,14 +160,26 @@ def reconcile_and_finalize_samples(
     for key in plan.reused_sample_keys:
         rec = dict(plan.reused_sample_records[key])
         if "quality_raw" not in rec and "quality" in rec:
-            q_old = rec["quality"]
+            q_old = rec["quality"] if isinstance(rec.get("quality"), dict) else {}
+            # Nested image.valid preferred; legacy top-level valid is fallback only.
+            image_info = rec.get("image") if isinstance(rec.get("image"), dict) else {}
             rec["quality_raw"] = {
-                "valid": rec.get("valid", True),
+                "valid": bool(image_info.get("valid", rec.get("valid", True))),
                 "sharpness_raw": q_old.get("sharpness_raw"),
                 "dark_ratio": q_old.get("dark_ratio"),
                 "bright_ratio": q_old.get("bright_ratio"),
                 "exposure_score": q_old.get("exposure_score"),
             }
+        # Promote legacy flat pose fields into nested contract when reusing old records.
+        if not isinstance(rec.get("pose"), dict):
+            y_b = rec.get("pose_bucket_yaw")
+            p_b = rec.get("pose_bucket_pitch")
+            if y_b is not None or p_b is not None:
+                rec["pose"] = {
+                    "valid": bool(rec.get("valid", True)),
+                    "yaw_bucket": y_b or "unknown",
+                    "pitch_bucket": p_b or "unknown",
+                }
         raw_combined.append(rec)
 
     # 2. Add newly analyzed sample records
@@ -175,39 +189,13 @@ def reconcile_and_finalize_samples(
     raw_combined.sort(key=lambda s: str(s.get("sample_id", s.get("sample_key", ""))))
 
     # 3. Re-run Pass 2 quality normalization
-    finalized_samples, norm_summary = finalize_quality_scores(raw_combined)
+    finalized_samples, norm_summary = finalize_quality_scores(raw_combined, quality_config)
 
-    # 4. Generate overall summary
-    yaw_buckets = {b: 0 for b in ["pitch_center_yaw_center", "front", "slight_left", "slight_right", "left", "right", "extreme"]}
-    pitch_buckets = {b: 0 for b in ["up", "center", "down"]}
-    total_valid = 0
-    total_invalid = 0
-    usable_count = 0
-
-    for s in finalized_samples:
-        if s.get("valid", True):
-            total_valid += 1
-            if s.get("usable_for_sampling", True):
-                usable_count += 1
-
-            y_b = s.get("pose_bucket_yaw")
-            if y_b in yaw_buckets:
-                yaw_buckets[y_b] += 1
-
-            p_b = s.get("pose_bucket_pitch")
-            if p_b in pitch_buckets:
-                pitch_buckets[p_b] += 1
-        else:
-            total_invalid += 1
-
-    overall_summary = {
-        "total_samples": len(finalized_samples),
-        "valid_samples": total_valid,
-        "invalid_samples": total_invalid,
-        "usable_for_sampling": usable_count,
-        "pose_distribution_yaw": yaw_buckets,
-        "pose_distribution_pitch": pitch_buckets,
-        "quality_normalization": norm_summary,
-    }
+    # 4. Same canonical summary builder as full Analyzer (Ticket 14 / T17-R2-01).
+    overall_summary = build_canonical_summary(
+        finalized_samples,
+        norm_summary,
+        samples_len=len(finalized_samples),
+    )
 
     return finalized_samples, overall_summary

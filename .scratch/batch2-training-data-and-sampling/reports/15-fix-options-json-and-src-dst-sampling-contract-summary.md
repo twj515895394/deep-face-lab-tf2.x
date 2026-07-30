@@ -4,7 +4,7 @@
 > 自审：`PASS`（不覆盖独立 Reviewer Gate）  
 > Base Commit：`d4d0b20b91a0bdf5a06586f345f974255aa46002`  
 > 分支：`codex/batch2-ticket15-config-contract`  
-> Head Commit：*（commit 后回填）*  
+> Head Commit：`43a3c437fee4454b54abb192727797dbbe20a4e7`  
 > 运行环境：Windows 11 / Python 3.11.7（pyenv）  
 > `--options-json` 文档同步：**PASS**  
 > 文档版本：**v1.1**  

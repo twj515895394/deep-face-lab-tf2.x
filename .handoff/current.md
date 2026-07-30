@@ -27,7 +27,7 @@ Ticket 14 最终实现：      37e99255e195d73dbd3720858ec1a93b4c8619cc
 Ticket 14 最终 Review：   94f57f9ec9c488d140eb37fbe0ba03fa26f1b020
 Ticket 15 开工基线：      d4d0b20b91a0bdf5a06586f345f974255aa46002
 Ticket 15 工作分支：      codex/batch2-ticket15-config-contract
-Ticket 15 实现提交：      （待 commit）
+Ticket 15 实现提交：      43a3c437fee4454b54abb192727797dbbe20a4e7
 ```
 
 权威状态：

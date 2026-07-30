@@ -152,6 +152,14 @@ class TestBatch2TrainerSaveWindow(unittest.TestCase):
         self.assertEqual(model.get_iter(), 1)
         self.assertEqual(model.train_calls, 1)
         self.assertIn("target_reached", ctrl.save_reasons)
+        # T19-R2-03: single checkpoint — no initial_iter + target_reached double save.
+        self.assertEqual(ctrl.save_reasons.count("target_reached"), 1)
+        self.assertNotIn("initial_iter", ctrl.save_reasons)
+        self.assertEqual(model.save_calls, 1)
+        target_logs = [x for x in logs if "[Save][target_reached]" in x]
+        self.assertEqual(len(target_logs), 1)
+        initial_logs = [x for x in logs if "[Save][initial_iter]" in x]
+        self.assertEqual(len(initial_logs), 0)
 
     def test_resume_near_target(self):
         model = FakeModel(start_iter=4)
@@ -268,8 +276,21 @@ class TestBatch2TrainerSaveWindow(unittest.TestCase):
 
     def test_record_loss_degraded_warning(self):
         model = FakeModel()
-        logs: List[str] = []
-        ctrl, window, _ = self._make_ctrl(model, logs, warmup_iters=0)
+        all_logs: List[str] = []
+        c2s = queue.Queue()
+        window = LossWindowTracker()
+
+        def log_info(msg, end=None):
+            all_logs.append(str(msg))
+
+        ctrl = TrainerSaveController(
+            model=model,
+            loss_window=window,
+            c2s=c2s,
+            debug=False,
+            warmup_iters=0,
+            log_info_fn=log_info,
+        )
 
         def boom():
             raise RuntimeError("hist-broken")
@@ -278,7 +299,28 @@ class TestBatch2TrainerSaveWindow(unittest.TestCase):
         model.train_one_iter()
         model.iter = 1
         ctrl.record_train_loss()
+        ctrl.record_train_loss()
+        ctrl.record_train_loss()
         self.assertTrue(ctrl.degraded)
+        self.assertEqual(ctrl.window_degraded_count, 3)
+        # T19-R2-02: only first failure in the window emits a warning.
+        degraded_logs = [x for x in all_logs if "[LossWindow] degraded" in x]
+        self.assertEqual(len(degraded_logs), 1)
+
+        # Successful save commits and resets window degraded state.
+        model.get_loss_history = lambda: [[0.1, 0.2]]
+        model._save_should_fail = 0
+        model.loss_history = [[0.1, 0.2]]
+        ctrl.record_train_loss()  # still boom? no, restored
+        # Force one more boom-free append then save with prior degraded_count.
+        ok = ctrl.model_save(reason="scheduled")
+        self.assertTrue(ok)
+        save_logs = [x for x in all_logs if x.startswith("[Save][scheduled]")]
+        self.assertTrue(any("window_incomplete" in x for x in save_logs))
+        self.assertTrue(any("degraded_count=" in x for x in save_logs))
+        self.assertFalse(ctrl.degraded)
+        self.assertEqual(ctrl.window_degraded_count, 0)
+        self.assertFalse(window.degraded)
 
     def test_range_in_log_format(self):
         text = format_loss_window_log(
@@ -290,6 +332,56 @@ class TestBatch2TrainerSaveWindow(unittest.TestCase):
         )
         self.assertIn("range=11001..12000", text)
         self.assertIn("window=0 (empty)", text)
+
+    def test_main_thread_propagates_error_before_close(self):
+        """T19-R2-01: op=error must not be swallowed as a normal close."""
+        from mainscripts.Trainer import TrainerClientState
+
+        state = TrainerClientState()
+        self.assertEqual(
+            state.on_message(
+                {
+                    "op": "error",
+                    "reason": "scheduled",
+                    "error": "disk full",
+                    "error_type": "OSError",
+                    "traceback": "tb-here",
+                    "iter": 12,
+                }
+            ),
+            "continue",
+        )
+        self.assertIsNotNone(state.fatal_error)
+        self.assertEqual(state.on_message({"op": "close"}), "exit_error")
+        with self.assertRaises(RuntimeError) as ctx:
+            state.raise_if_fatal()
+        msg = str(ctx.exception)
+        self.assertIn("disk full", msg)
+        self.assertIn("scheduled", msg)
+        self.assertIn("12", msg)
+        self.assertIn("tb-here", msg)
+
+    def test_main_thread_normal_close_no_raise(self):
+        from mainscripts.Trainer import TrainerClientState
+
+        state = TrainerClientState()
+        self.assertEqual(state.on_message({"op": "close"}), "exit_ok")
+        state.raise_if_fatal()  # must not raise
+
+    def test_failed_exit_save_emits_error_and_stops(self):
+        model = FakeModel(fail_save_times=1, start_iter=10)
+        logs: List[str] = []
+        ctrl, window, c2s = self._make_ctrl(model, logs, warmup_iters=0)
+        ctrl.train_one_recorded()
+        s2c = queue.Queue()
+        s2c.put({"op": "close"})
+        with self.assertRaises(RuntimeError):
+            ctrl.process_commands(s2c)
+        self.assertTrue(ctrl.should_stop)
+        err = c2s.get_nowait()
+        self.assertEqual(err["op"], "error")
+        self.assertEqual(err["reason"], "exit")
+        self.assertEqual(len(window), 1)
 
 
 if __name__ == "__main__":

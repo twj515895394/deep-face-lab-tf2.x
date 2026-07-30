@@ -16,6 +16,65 @@ from core.interact import interact as io
 from samplelib.sampling.loss_stats import LossWindowTracker
 from mainscripts.trainer_save_control import TrainerSaveController
 
+
+class TrainerClientState:
+    """
+    Main-thread view of trainerThread messages.
+
+    Fatal save/train errors must not be treated as a normal close.
+    """
+
+    def __init__(self):
+        self.fatal_error = None  # type: dict | None
+        self.closed = False
+        self.last_show = None  # type: dict | None
+
+    def on_message(self, msg):
+        """
+        Apply one c2s message.
+
+        Returns:
+          'continue'  — keep polling
+          'show'      — preview payload available on last_show
+          'exit_ok'   — normal close
+          'exit_error'— fatal error then close (or fatal alone)
+        """
+        if not isinstance(msg, dict):
+            return "continue"
+        op = msg.get("op", "")
+        if op == "error":
+            self.fatal_error = msg
+            return "continue"
+        if op == "close":
+            self.closed = True
+            return "exit_error" if self.fatal_error is not None else "exit_ok"
+        if op == "show":
+            self.last_show = msg
+            return "show"
+        return "continue"
+
+    def raise_if_fatal(self):
+        if self.fatal_error is None:
+            return
+        err = self.fatal_error
+        reason = err.get("reason") or "unknown"
+        error_type = err.get("error_type") or "Error"
+        error = err.get("error") or "trainer fatal error"
+        iter_num = err.get("iter")
+        tb = err.get("traceback") or ""
+        parts = [
+            f"Trainer fatal error ({error_type})",
+            f"reason={reason}",
+        ]
+        if iter_num is not None:
+            parts.append(f"iter={iter_num}")
+        parts.append(str(error))
+        message = ": ".join(parts[:1]) + " [" + ", ".join(parts[1:-1]) + "]: " + parts[-1]
+        if tb:
+            message = message + "\n" + tb
+        raise RuntimeError(message)
+
+
 def trainerThread (s2c, c2s, e,
                     model_class_name = None,
                     saved_models_path = None,
@@ -243,6 +302,11 @@ def trainerThread (s2c, c2s, e,
                 leras_nn.compact_gpu_memory()
             except:
                 pass
+            # Unblock main() if failure happened before the first preview signal.
+            try:
+                e.set()
+            except Exception:
+                pass
         break
     c2s.put ( {'op':'close'} )
 
@@ -262,17 +326,31 @@ def main(**kwargs):
 
     e.wait() #Wait for inital load to occur.
 
+    client_state = TrainerClientState()
+
     if no_preview:
         while True:
             if not c2s.empty():
                 input = c2s.get()
-                op = input.get('op','')
-                if op == 'close':
+                action = client_state.on_message(input)
+                if action == 'exit_ok' or action == 'exit_error':
                     break
+                if action == 'continue' and client_state.fatal_error is not None:
+                    # Log immediately; still wait for trainerThread close so join is clean.
+                    err = client_state.fatal_error
+                    io.log_err(
+                        f"[Trainer] fatal: {err.get('error_type')}: {err.get('error')} "
+                        f"(reason={err.get('reason')}, iter={err.get('iter')})"
+                    )
             try:
                 io.process_messages(0.1)
             except KeyboardInterrupt:
                 s2c.put ( {'op': 'close'} )
+        try:
+            thread.join(timeout=120)
+        except Exception:
+            pass
+        client_state.raise_if_fatal()
     else:
         wnd_name = "Training preview"
         io.named_window(wnd_name)
@@ -289,36 +367,45 @@ def main(**kwargs):
         while True:
             if not c2s.empty():
                 input = c2s.get()
-                op = input['op']
-                if op == 'show':
-                    is_waiting_preview = False
-                    loss_history = input['loss_history'] if 'loss_history' in input.keys() else None
-                    previews = input['previews'] if 'previews' in input.keys() else None
-                    iter = input['iter'] if 'iter' in input.keys() else 0
-                    if previews is not None:
-                        max_w = 0
-                        max_h = 0
-                        for (preview_name, preview_rgb) in previews:
-                            (h, w, c) = preview_rgb.shape
-                            max_h = max (max_h, h)
-                            max_w = max (max_w, w)
-
-                        max_size = 800
-                        if max_h > max_size:
-                            max_w = int( max_w / (max_h / max_size) )
-                            max_h = max_size
-
-                        #make all previews size equal
-                        for preview in previews[:]:
-                            (preview_name, preview_rgb) = preview
-                            (h, w, c) = preview_rgb.shape
-                            if h != max_h or w != max_w:
-                                previews.remove(preview)
-                                previews.append ( (preview_name, cv2.resize(preview_rgb, (max_w, max_h))) )
-                        selected_preview = selected_preview % len(previews)
-                        update_preview = True
-                elif op == 'close':
+                action = client_state.on_message(input)
+                if action == 'exit_ok' or action == 'exit_error':
                     break
+                if action == 'continue' and client_state.fatal_error is not None:
+                    err = client_state.fatal_error
+                    io.log_err(
+                        f"[Trainer] fatal: {err.get('error_type')}: {err.get('error')} "
+                        f"(reason={err.get('reason')}, iter={err.get('iter')})"
+                    )
+                    # Keep looping until close so UI can still exit cleanly.
+                    continue
+                if action != 'show':
+                    continue
+                is_waiting_preview = False
+                loss_history = input['loss_history'] if 'loss_history' in input.keys() else None
+                previews = input['previews'] if 'previews' in input.keys() else None
+                iter = input['iter'] if 'iter' in input.keys() else 0
+                if previews is not None:
+                    max_w = 0
+                    max_h = 0
+                    for (preview_name, preview_rgb) in previews:
+                        (h, w, c) = preview_rgb.shape
+                        max_h = max (max_h, h)
+                        max_w = max (max_w, w)
+
+                    max_size = 800
+                    if max_h > max_size:
+                        max_w = int( max_w / (max_h / max_size) )
+                        max_h = max_size
+
+                    #make all previews size equal
+                    for preview in previews[:]:
+                        (preview_name, preview_rgb) = preview
+                        (h, w, c) = preview_rgb.shape
+                        if h != max_h or w != max_w:
+                            previews.remove(preview)
+                            previews.append ( (preview_name, cv2.resize(preview_rgb, (max_w, max_h))) )
+                    selected_preview = selected_preview % len(previews)
+                    update_preview = True
 
             if update_preview:
                 update_preview = False
@@ -394,3 +481,8 @@ def main(**kwargs):
                 s2c.put ( {'op': 'close'} )
 
         io.destroy_all_windows()
+        try:
+            thread.join(timeout=120)
+        except Exception:
+            pass
+        client_state.raise_if_fatal()

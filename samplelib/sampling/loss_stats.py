@@ -192,9 +192,10 @@ class LossWindowTracker:
         return compute_loss_window_stats(frozen, start_index=0, end_index=None)
 
     def commit(self) -> None:
-        """Consume the window after a successful save."""
+        """Consume the window after a successful save and clear degraded flag."""
         self._items.clear()
         self._iters.clear()
+        self.degraded = False
 
     def stats(self) -> Optional[LossWindowStats]:
         return self.stats_for_frozen(self._items)
@@ -208,6 +209,7 @@ def format_loss_window_log(
     start_iter: Optional[int] = None,
     end_iter: Optional[int] = None,
     window_incomplete: bool = False,
+    degraded_count: int = 0,
 ) -> str:
     """
     Structured multi-line save window log.
@@ -220,6 +222,8 @@ def format_loss_window_log(
     flags = []
     if start_iter is not None and end_iter is not None:
         flags.append(f"range={int(start_iter)}..{int(end_iter)}")
+    if int(degraded_count or 0) > 0:
+        flags.append(f"degraded_count={int(degraded_count)}")
     if window_incomplete:
         flags.append("window_incomplete")
     flag_suffix = (" " + " ".join(flags)) if flags else ""

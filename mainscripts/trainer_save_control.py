@@ -45,6 +45,8 @@ class TrainerSaveController:
         self.is_reached_goal = bool(model.is_reached_iter_goal())
         self.should_stop = False
         self.degraded = False
+        self.window_degraded_count = 0
+        self._degraded_warned_this_window = False
         self.last_error: Optional[BaseException] = None
         self.save_reasons: List[str] = []
         # Initial save only when session starts at iter 0 and first train reaches 1.
@@ -61,6 +63,17 @@ class TrainerSaveController:
         if self.log_fn is not None:
             self.log_fn(msg)
 
+    def _reset_window_degraded(self) -> None:
+        """Clear per-window degraded state after a successful commit."""
+        self.degraded = False
+        self.window_degraded_count = 0
+        self._degraded_warned_this_window = False
+        if hasattr(self.loss_window, "degraded"):
+            try:
+                self.loss_window.degraded = False
+            except Exception:
+                pass
+
     def record_train_loss(self) -> None:
         """Append latest train loss; mark degraded with bounded warning on failure."""
         try:
@@ -71,10 +84,20 @@ class TrainerSaveController:
             )
         except Exception as e:
             self.degraded = True
-            self._log(
-                f"[LossWindow] degraded: failed to record train loss "
-                f"({type(e).__name__}: {e})"
-            )
+            self.window_degraded_count += 1
+            if hasattr(self.loss_window, "degraded"):
+                try:
+                    self.loss_window.degraded = True
+                except Exception:
+                    pass
+            # One warning per window; subsequent failures only increment the counter.
+            if not self._degraded_warned_this_window:
+                self._degraded_warned_this_window = True
+                self._log(
+                    f"[LossWindow] degraded: failed to record train loss "
+                    f"({type(e).__name__}: {e}); further failures in this window "
+                    f"are counted but not re-logged"
+                )
 
     def model_save(self, reason: str = "scheduled") -> bool:
         """
@@ -91,7 +114,12 @@ class TrainerSaveController:
 
         frozen = self.loss_window.freeze()
         start_iter, end_iter = self.loss_window.iter_range_for_frozen(frozen)
-        incomplete = bool(getattr(self.loss_window, "degraded", False) or self.degraded)
+        incomplete = bool(
+            getattr(self.loss_window, "degraded", False)
+            or self.degraded
+            or self.window_degraded_count > 0
+        )
+        degraded_count = int(self.window_degraded_count)
 
         try:
             self._log("Saving....", end="\r")
@@ -128,6 +156,7 @@ class TrainerSaveController:
                 start_iter=start_iter,
                 end_iter=end_iter,
                 window_incomplete=incomplete,
+                degraded_count=degraded_count,
             )
             self._log(log_line)
         except Exception as log_exc:
@@ -137,6 +166,7 @@ class TrainerSaveController:
             )
 
         self.loss_window.commit()
+        self._reset_window_degraded()
         self.save_reasons.append(reason)
         return True
 
@@ -146,17 +176,26 @@ class TrainerSaveController:
             return
 
         cur = int(self.model.get_iter())
+        target = int(self.model.get_target_iter() or 0)
+        reached = target != 0 and self.model.is_reached_iter_goal()
+
+        # target=1 coincides with initial_iter: one checkpoint only (target_reached).
         if not self._initial_save_done and cur == 1:
+            if reached and not self.is_reached_goal:
+                self._log("Reached target iteration.")
+                self.model_save(reason="target_reached")
+                self._initial_save_done = True
+                self.is_reached_goal = True
+                self._log("You can use preview now.")
+                return
             self.model_save(reason="initial_iter")
             self._initial_save_done = True
 
-        target = int(self.model.get_target_iter() or 0)
-        if target != 0 and self.model.is_reached_iter_goal():
-            if not self.is_reached_goal:
-                self._log("Reached target iteration.")
-                self.model_save(reason="target_reached")
-                self.is_reached_goal = True
-                self._log("You can use preview now.")
+        if reached and not self.is_reached_goal:
+            self._log("Reached target iteration.")
+            self.model_save(reason="target_reached")
+            self.is_reached_goal = True
+            self._log("You can use preview now.")
 
     def train_one_recorded(self) -> Tuple[int, float]:
         """Train one iter, record loss, run boundary checks."""

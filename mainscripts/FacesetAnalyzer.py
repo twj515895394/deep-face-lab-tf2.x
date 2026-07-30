@@ -65,6 +65,22 @@ def main(
         f"signature_mode={signature_mode}"
     )
 
+    # T17-R3-01: never silently downgrade an existing strong Sidecar to quick.
+    # Refuse with non-zero exit; keep formal Sidecar bytes unchanged.
+    if signature_mode == SIGNATURE_MODE_QUICK and output_file.exists():
+        existing_meta, existing_val = load_metadata(output_file)
+        if existing_val.is_supported and existing_val.is_valid and existing_meta is not None:
+            existing_mode = signature_mode_from_analysis_config(
+                getattr(existing_meta, "analysis_config", None)
+            )
+            if existing_mode == SIGNATURE_MODE_STRONG:
+                io.log_err(
+                    f"[FacesetAnalyzer] Refusing strong→quick signature-mode downgrade for "
+                    f"{output_file}. Re-run with --strong-fingerprint to keep/refresh strong, "
+                    f"or remove the Sidecar to start a new quick analysis."
+                )
+                return 7
+
     # Check faceset format and load samples
     try:
         samples = SampleLoader.load(SampleType.FACE, input_dir)

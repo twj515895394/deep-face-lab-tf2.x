@@ -397,12 +397,124 @@ class TestFacesetAnalyzerCLI(unittest.TestCase):
         )
         self.assertFalse(plan_down.is_incremental)
         self.assertTrue(any("DOWNGRADE" in r for r in plan_down.reasons))
+        # Forbidden plan must not advertise samples-to-add (no silent recompute list).
+        self.assertEqual(plan_down.added_sample_keys, [])
 
         plan_same = build_incremental_plan(
             quick_meta, cur, current_signature_mode=SIGNATURE_MODE_QUICK
         )
         self.assertTrue(plan_same.is_incremental)
         self.assertEqual(plan_same.reused_sample_keys, ["a.png"])
+
+    def test_strong_to_quick_cli_refuses_and_keeps_sidecar(self):
+        """T17-R3-01: strong Sidecar + quick run → exit 7, bytes unchanged."""
+        work = self.temp_dir / "strong_to_quick_refuse"
+        if work.exists():
+            shutil.rmtree(work, ignore_errors=True)
+        build_ordinary_fixture(work)
+        meta_file = work / "faceset_metadata.v1.json"
+        report_file = work / "faceset_metadata_report.v1.json"
+
+        self.assertEqual(
+            FacesetAnalyzer.main(
+                input_dir=work,
+                output_file=meta_file,
+                report_file=report_file,
+                incremental=False,
+                force=True,
+                strong_fingerprint=True,
+                workers=1,
+            ),
+            0,
+        )
+        loaded, val = load_metadata(meta_file)
+        self.assertTrue(val.is_valid)
+        self.assertEqual(
+            ((loaded.analysis_config or {}).get("signature") or {}).get("mode"),
+            "strong",
+        )
+        old_bytes = meta_file.read_bytes()
+        old_sha = hashlib.sha256(old_bytes).hexdigest()
+
+        # incremental quick
+        ret_incr = FacesetAnalyzer.main(
+            input_dir=work,
+            output_file=meta_file,
+            report_file=report_file,
+            incremental=True,
+            strong_fingerprint=False,
+            workers=1,
+        )
+        self.assertEqual(ret_incr, 7)
+        self.assertEqual(meta_file.read_bytes(), old_bytes)
+        self.assertEqual(hashlib.sha256(meta_file.read_bytes()).hexdigest(), old_sha)
+
+        # force quick also refuses
+        ret_force = FacesetAnalyzer.main(
+            input_dir=work,
+            output_file=meta_file,
+            report_file=report_file,
+            incremental=False,
+            force=True,
+            strong_fingerprint=False,
+            workers=1,
+        )
+        self.assertEqual(ret_force, 7)
+        self.assertEqual(meta_file.read_bytes(), old_bytes)
+
+        after, after_val = load_metadata(meta_file)
+        self.assertTrue(after_val.is_valid)
+        self.assertEqual(
+            ((after.analysis_config or {}).get("signature") or {}).get("mode"),
+            "strong",
+        )
+
+    def test_strong_to_strong_cli_incremental_reuse(self):
+        """strong→strong no-change reuses samples and keeps strong mode."""
+        work = self.temp_dir / "strong_to_strong_reuse"
+        if work.exists():
+            shutil.rmtree(work, ignore_errors=True)
+        build_ordinary_fixture(work)
+        meta_file = work / "faceset_metadata.v1.json"
+        report_file = work / "faceset_metadata_report.v1.json"
+
+        self.assertEqual(
+            FacesetAnalyzer.main(
+                input_dir=work,
+                output_file=meta_file,
+                report_file=report_file,
+                incremental=False,
+                force=True,
+                strong_fingerprint=True,
+                workers=1,
+            ),
+            0,
+        )
+        full, _ = load_metadata(meta_file)
+        full_fp = (full.dataset or {}).get("fingerprint")
+
+        self.assertEqual(
+            FacesetAnalyzer.main(
+                input_dir=work,
+                output_file=meta_file,
+                report_file=report_file,
+                incremental=True,
+                strong_fingerprint=True,
+                workers=1,
+            ),
+            0,
+        )
+        with open(report_file, "r", encoding="utf-8") as f:
+            report_data = json.load(f)
+        self.assertTrue(report_data.get("incremental"))
+        self.assertGreaterEqual(int(report_data.get("reused_count") or 0), 1)
+        incr, val = load_metadata(meta_file)
+        self.assertTrue(val.is_valid)
+        self.assertEqual(
+            ((incr.analysis_config or {}).get("signature") or {}).get("mode"),
+            "strong",
+        )
+        self.assertEqual((incr.dataset or {}).get("fingerprint"), full_fp)
 
 
 if __name__ == "__main__":

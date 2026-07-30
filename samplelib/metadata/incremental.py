@@ -76,11 +76,10 @@ def build_incremental_plan(
     old_mode = signature_mode_from_analysis_config(getattr(old_metadata, "analysis_config", None))
     cur_mode = (current_signature_mode or SIGNATURE_MODE_QUICK).lower()
 
-    # strong -> quick: never degrade; force full recompute.
+    # strong -> quick: never degrade. CLI must refuse (non-zero) and keep Sidecar.
     if old_mode == SIGNATURE_MODE_STRONG and cur_mode == SIGNATURE_MODE_QUICK:
         return IncrementalPlan(
             is_incremental=False,
-            added_sample_keys=list(current_signatures.keys()),
             reasons=["SIGNATURE_MODE_DOWNGRADE_FORBIDDEN_STRONG_TO_QUICK"],
         )
 

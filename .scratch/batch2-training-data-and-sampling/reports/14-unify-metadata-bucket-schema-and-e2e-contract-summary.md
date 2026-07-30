@@ -5,7 +5,7 @@
 > Base Commit（Round 5 开工前 HEAD）：`e8d0a0b07ea13bfc1d321c168ba9f8f5c7e9579a`  
 > Round-4 实现：`b6b0e79d6866c089deff905e00bb900a58da547f`  
 > Round-5 Review 文档：`77f507ed3087b1effcdd00b5e838023abf637e72`  
-> Head Commit（Round 5 实现）：*（待 commit 后回填）*  
+> Head Commit（Round 5 实现）：`37e99255e195d73dbd3720858ec1a93b4c8619cc`  
 > 运行环境：Windows 11 / Python 3.11.7（pyenv 全局：`C:\Users\Administrator\.pyenv\pyenv-win\versions\3.11.7\python.exe`）  
 > 说明：本地 `.venv` 缺 `numpy/cv2`，本轮测试使用已安装依赖的系统 Python 3.11.7  
 > `--options-json` 文档同步：**NA**

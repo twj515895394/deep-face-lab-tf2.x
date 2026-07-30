@@ -25,7 +25,7 @@
 Round-4 实现提交：    b6b0e79d6866c089deff905e00bb900a58da547f
 Round-5 Review 提交： 77f507ed3087b1effcdd00b5e838023abf637e72
 Round-5 开工前 HEAD： e8d0a0b07ea13bfc1d321c168ba9f8f5c7e9579a
-Round-5 实现提交：    （未 commit；工作区已改 loader + test + docs）
+Round-5 实现提交：    37e99255e195d73dbd3720858ec1a93b4c8619cc
 ```
 
 施工 Summary 自审 `PASS` **不能**覆盖独立 Reviewer。当前权威状态：
@@ -117,7 +117,7 @@ Ticket 19：若未完成则继续
 
 ---
 
-## 6. Round-5 改动范围（已落地，待 commit）
+## 6. Round-5 改动范围（已落地）
 
 ```text
 samplelib/metadata/loader.py

@@ -649,15 +649,38 @@ class ModelBase(object):
             except:
                 pass
 
-        if hasattr(self, 'sample_generators'):
-            for gen in self.sample_generators:
+        # Prefer generator.finalize() so WeightedIndexHost / index hosts close after workers stop.
+        generator_lists = []
+        if hasattr(self, 'sample_generators') and self.sample_generators is not None:
+            generator_lists.append(self.sample_generators)
+        if hasattr(self, 'generator_list') and self.generator_list is not None:
+            if self.generator_list is not getattr(self, 'sample_generators', None):
+                generator_lists.append(self.generator_list)
+
+        seen_ids = set()
+        for generator_list in generator_lists:
+            for gen in generator_list:
+                if gen is None:
+                    continue
+                gen_id = id(gen)
+                if gen_id in seen_ids:
+                    continue
+                seen_ids.add(gen_id)
+
+                if hasattr(gen, 'finalize') and callable(getattr(gen, 'finalize')):
+                    try:
+                        gen.finalize()
+                        continue
+                    except Exception:
+                        pass
+
                 if hasattr(gen, 'generators'):
                     for g in gen.generators:
                         if hasattr(g, 'p') and g.p is not None:
                             try:
                                 g.p.terminate()
                                 g.p.join(timeout=3)
-                            except:
+                            except Exception:
                                 pass
                             g.p = None
 

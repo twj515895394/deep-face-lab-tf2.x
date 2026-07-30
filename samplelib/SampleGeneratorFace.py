@@ -38,6 +38,7 @@ class SampleGeneratorFace(SampleGeneratorBase):
         self.output_sample_types = output_sample_types
         self.sampling_policy = sampling_policy
         self.sampling_role = sampling_role
+        self._finalized = False
         
         if self.debug:
             self.generators_count = 1
@@ -46,6 +47,10 @@ class SampleGeneratorFace(SampleGeneratorBase):
 
         samples = SampleLoader.load (SampleType.FACE, samples_path)
         self.samples_len = len(samples)
+        # Keep host ownership on the generator so finalize/close can stop IPC cleanly.
+        self.index_host = None
+        self.ct_index_host = None
+        self.generators = []
         
         if self.samples_len == 0:
             if raise_on_no_data:
@@ -90,6 +95,10 @@ class SampleGeneratorFace(SampleGeneratorBase):
             ct_samples = None
             ct_index_host = None
 
+        # Persist hosts for explicit finalize; do not rely on __del__.
+        self.index_host = index_host
+        self.ct_index_host = ct_index_host
+
         if self.debug:
             self.generators = [ThisThreadGenerator ( self.batch_func, (samples, index_host.create_cli(), ct_samples, ct_index_host.create_cli() if ct_index_host is not None else None) )]
         else:
@@ -101,6 +110,7 @@ class SampleGeneratorFace(SampleGeneratorBase):
             _use_fp16_ipc = (_res >= 192)
             if _use_fp16_ipc:
                 io.log_info(f"FP16 IPC enabled for resolution={_res} (halves data transfer size)")
+            # create_cli() must happen in the main process before worker start.
             self.generators = [SubprocessGenerator ( self.batch_func, (samples, index_host.create_cli(), ct_samples, ct_index_host.create_cli() if ct_index_host is not None else None), prefetch=8, start_now=False, enable_fp16_ipc=_use_fp16_ipc ) \
                                for i in range(self.generators_count) ]
                                
@@ -113,6 +123,51 @@ class SampleGeneratorFace(SampleGeneratorBase):
     #overridable
     def is_initialized(self):
         return self.initialized
+
+    def finalize(self):
+        """
+        Explicit lifecycle cleanup:
+        1) stop generator worker processes
+        2) close index hosts (WeightedIndexHost / mplib hosts with close)
+        Does not rely on Python __del__ as the primary path.
+        """
+        if getattr(self, "_finalized", False):
+            return
+        self._finalized = True
+
+        generators = getattr(self, "generators", None) or []
+        for g in generators:
+            p = getattr(g, "p", None)
+            if p is not None:
+                try:
+                    if p.is_alive():
+                        p.terminate()
+                    p.join(timeout=3)
+                except Exception:
+                    pass
+                try:
+                    g.p = None
+                except Exception:
+                    pass
+
+        for host_attr in ("index_host", "ct_index_host"):
+            host = getattr(self, host_attr, None)
+            if host is not None and hasattr(host, "close"):
+                try:
+                    host.close()
+                except Exception:
+                    pass
+            try:
+                setattr(self, host_attr, None)
+            except Exception:
+                pass
+
+    def __del__(self):
+        # Safety net for tests/tools that forget finalize(); training uses ModelBase.finalize.
+        try:
+            self.finalize()
+        except Exception:
+            pass
         
     def __iter__(self):
         return self

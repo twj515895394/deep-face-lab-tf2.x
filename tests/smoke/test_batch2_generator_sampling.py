@@ -70,10 +70,13 @@ class TestBatch2GeneratorSampling(unittest.TestCase):
             output_sample_types=self.sample_types_base,
             sampling_policy=policy,
         )
-        batch = next(gen)
-        self.assertIsInstance(batch, list)
-        self.assertEqual(len(batch), 1)
-        self.assertEqual(batch[0].shape[0], 1)
+        try:
+            batch = next(gen)
+            self.assertIsInstance(batch, list)
+            self.assertEqual(len(batch), 1)
+            self.assertEqual(batch[0].shape[0], 1)
+        finally:
+            gen.finalize()
 
     def test_generator_with_legacy_uniform_yaw_policy(self):
         policy = LegacyUniformYawPolicy(seed=42)
@@ -84,10 +87,13 @@ class TestBatch2GeneratorSampling(unittest.TestCase):
             output_sample_types=self.sample_types_base,
             sampling_policy=policy,
         )
-        batch = next(gen)
-        self.assertIsInstance(batch, list)
-        self.assertEqual(len(batch), 1)
-        self.assertEqual(batch[0].shape[0], 1)
+        try:
+            batch = next(gen)
+            self.assertIsInstance(batch, list)
+            self.assertEqual(len(batch), 1)
+            self.assertEqual(batch[0].shape[0], 1)
+        finally:
+            gen.finalize()
 
     def test_generator_with_pose_balanced_policy(self):
         config = SamplingConfig(mode=SamplingMode.POSE_BALANCED, seed=42)
@@ -99,10 +105,13 @@ class TestBatch2GeneratorSampling(unittest.TestCase):
             output_sample_types=self.sample_types_base,
             sampling_policy=policy,
         )
-        batch = next(gen)
-        self.assertIsInstance(batch, list)
-        self.assertEqual(len(batch), 1)
-        self.assertEqual(batch[0].shape[0], 1)
+        try:
+            batch = next(gen)
+            self.assertIsInstance(batch, list)
+            self.assertEqual(len(batch), 1)
+            self.assertEqual(batch[0].shape[0], 1)
+        finally:
+            gen.finalize()
 
     def test_generator_with_quality_pose_balanced_policy(self):
         config = SamplingConfig(mode=SamplingMode.QUALITY_POSE_BALANCED, seed=42)
@@ -114,10 +123,13 @@ class TestBatch2GeneratorSampling(unittest.TestCase):
             output_sample_types=self.sample_types_base,
             sampling_policy=policy,
         )
-        batch = next(gen)
-        self.assertIsInstance(batch, list)
-        self.assertEqual(len(batch), 1)
-        self.assertEqual(batch[0].shape[0], 1)
+        try:
+            batch = next(gen)
+            self.assertIsInstance(batch, list)
+            self.assertEqual(len(batch), 1)
+            self.assertEqual(batch[0].shape[0], 1)
+        finally:
+            gen.finalize()
 
     def test_src_dst_policy_isolation(self):
         config_src = SamplingConfig(mode=SamplingMode.POSE_BALANCED, seed=100)
@@ -143,13 +155,17 @@ class TestBatch2GeneratorSampling(unittest.TestCase):
             sampling_role="dst",
         )
 
-        batch_src = next(gen_src)
-        batch_dst = next(gen_dst)
+        try:
+            batch_src = next(gen_src)
+            batch_dst = next(gen_dst)
 
-        self.assertIsInstance(batch_src, list)
-        self.assertIsInstance(batch_dst, list)
-        self.assertEqual(len(batch_src), 1)
-        self.assertEqual(len(batch_dst), 1)
+            self.assertIsInstance(batch_src, list)
+            self.assertIsInstance(batch_dst, list)
+            self.assertEqual(len(batch_src), 1)
+            self.assertEqual(len(batch_dst), 1)
+        finally:
+            gen_src.finalize()
+            gen_dst.finalize()
 
 
 if __name__ == "__main__":

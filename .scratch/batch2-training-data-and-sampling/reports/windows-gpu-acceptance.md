@@ -1,60 +1,135 @@
-# Windows GPU Blackwell 真实硬件 FP32 + AdaBelief 验收规程与记录
+# Windows GPU 验收记录（Ticket 21 / Batch 2 Final Gate）
 
-> 对应目标：Batch 2 Ticket 11 (Windows GPU Blackwell 真实环境验收矩阵 W1 - W9)  
-> 状态：PENDING-WINDOWS-GPU (自动化纯函数与 CPU 测试矩阵已全部 PASS，实机显卡训练待在 Windows 物理机执行)
+> 更新日期：2026-07-30  
+> 分支：`codex/batch2-ticket19-loss-window`  
+> Commit：`e173ea6cd7b02ba26dfa2ac71e11710a5ab7defb`（文档提交时以 git HEAD 为准）  
+> 状态：**PENDING-WINDOWS-GPU / ENV-VALIDATION-DEFERRED**  
+> **不得**将本文件写成 PASS-WINDOWS-GPU，除非下文实机命令与日志齐全。
 
 ---
 
-## 1. 硬件与基线环境配置规范 (Baseline Manifest)
+## 1. 本机探测（2026-07-30）
 
 ```text
-OS: Windows 11 Pro 64-bit / Windows Server 2022
-GPU Device: NVIDIA RTX PRO 5000 Blackwell (48GB VRAM)
-NVIDIA Driver: 565.xx+
-CUDA Version: 12.x / cuDNN 8.9+
-TensorFlow Version: TensorFlow 2.x (with CUDA support)
-Python Baseline: 3.11 / 3.12 (./.venv/bin/python)
-Model Architecture: SAEHD (FP32 + AdaBelief, GAN=off, TrueFace=off)
+OS: Windows-10-10.0.19045-SP0
+Python: 3.11.7 (pyenv C:\Users\Administrator\.pyenv\pyenv-win\versions\3.11.7\python.exe)
+TensorFlow: NOT INSTALLED in acceptance Python (import tensorflow → ModuleNotFoundError)
+GPU SAEHD 训练：无法在本环境启动
+start method: spawn（Windows 默认）
+```
+
+结论：当前验收 Python **无 TF/GPU**，Matrix A/B 的 SAEHD 500 + resume 200 **不能执行**。  
+代码侧 smoke 仍可在本机运行。
+
+---
+
+## 2. 已具备的实现侧证据（非 GPU）
+
+```text
+命令：
+  python -m unittest discover -s tests/smoke -p "test_batch*.py" -q
+
+结果（实现侧 2026-07-30）：
+  Ran 331 tests
+  OK
+  shell EXIT=0
+
+覆盖：
+  Analyzer workers/strong/incremental/strict
+  Unicode 中文路径
+  Sampling fallback 边界
+  WeightedIndexHost / spawn 单元
+  Trainer save controller（无 GPU）
+```
+
+状态标签：
+
+```text
+PASS-WINDOWS-SMOKE（unit/smoke）
+PENDING-WINDOWS-GPU（SAEHD real train）
 ```
 
 ---
 
-## 2. Windows 场景验收矩阵 (W1 - W9 Matrix)
+## 3. 固定环境清单（实机时填写）
 
-| 序号 | 场景代码 | 场景描述 | 预期行为 / 门槛 | 自动化测试状态 | Windows GPU 实机状态 |
-|---|---|---|---|---|---|
-| 1 | **W1** | Legacy Random | `metadata_sampling=False`，启动与经典随机抽样一致，写回 checkpoint | **PASS** | PENDING-WINDOWS-GPU |
-| 2 | **W2** | Legacy Uniform Yaw | `uniform_yaw=True` 经典均匀 Yaw 侧脸采样开启，不加载 Sidecar Metadata | **PASS** | PENDING-WINDOWS-GPU |
-| 3 | **W3** | Pose Balanced | `metadata_sampling=True`, `mode=pose_balanced`，姿态稀缺桶权重提升，两侧独占采样 | **PASS** | PENDING-WINDOWS-GPU |
-| 4 | **W4** | Quality + Pose | `mode=quality_pose_balanced`，清晰度与姿态双因子加权，低质量样本保留微量探索 | **PASS** | PENDING-WINDOWS-GPU |
-| 5 | **W5** | 单侧 Metadata 缺失 | `src` 智能采样，`dst` Metadata 缺失并平滑回退至 legacy，日志分别记录 | **PASS** | PENDING-WINDOWS-GPU |
-| 6 | **W6** | 损坏/不匹配与 Fallback | JSON 损坏/匹配率不足时自动 Fallback；`fallback_on_optional_error=False` 抛出异常 | **PASS** | PENDING-WINDOWS-GPU |
-| 7 | **W7** | Packed Faceset | `faceset.pak` 打包格式免解包智能分析与加权抽样 | **PASS** | PENDING-WINDOWS-GPU |
-| 8 | **W8** | Save / Exit / Resume | 训练 300+ iter 保存退出，重新启动加载配置，模型迭代与采样状态连续 | **PASS** | PENDING-WINDOWS-GPU |
-| 9 | **W9** | Performance 开销 | 记录单 iter 耗时 (ms)、峰值 RSS 内存与 GPU VRAM 占用率，性能损耗 < 3% | **PASS** | PENDING-WINDOWS-GPU |
+| 项 | 值 |
+|---|---|
+| OS | _待填_ |
+| Python | _待填_ |
+| TensorFlow | _待填_ |
+| CUDA / cuDNN | _待填_ |
+| GPU 型号 / VRAM | _待填_ |
+| CPU / RAM | _待填_ |
+| branch | `codex/batch2-ticket19-loss-window` |
+| commit | _待填_ |
+| precision | **fp32**（强制） |
+| optimizer | **adabelief**（强制） |
+| 模型 | SAEHD |
+| resolution / batch | _待填_ |
+| workers | _待填_ |
+| faceset format | ordinary / packed |
+| sample counts SRC/DST | _待填_ |
 
 ---
 
-## 3. Windows GPU 实机执行协议 (Execution Protocol)
+## 4. 验收矩阵状态
 
-```bash
-# 步骤 1: 准备干净独立测试工作区
-mkdir batch2-acceptance
-cd batch2-acceptance
+### Matrix A — Legacy Baseline
 
-# 步骤 2: 生成测试 faceset metadata (Ordinary & Packed)
-python mainscripts/FacesetAnalyzer.py --input-dir data_src/aligned
-python mainscripts/FacesetAnalyzer.py --input-dir data_dst_packed/aligned
+| 场景 | 自动化 smoke | GPU 实机 |
+|---|---|---|
+| ordinary + legacy_random | PASS | PENDING-WINDOWS-GPU |
+| ordinary + legacy_uniform_yaw | PASS | PENDING-WINDOWS-GPU |
+| packed + legacy_random | PASS | PENDING-WINDOWS-GPU |
+| packed + legacy_uniform_yaw | PASS | PENDING-WINDOWS-GPU |
 
-# 步骤 3: 启动 SAEHD 交互式训练 / --options-json 启动
-python main.py train --training-data-src-dir data_src/aligned --training-data-dst-dir data_dst_packed/aligned --model-dir model_saehd --model SAEHD
+### Matrix B — Metadata Sampling（≥500 iter，save/exit/resume≥200）
 
-# 步骤 4: 收集启动日志中的 [Sampling][src] 与 [Sampling][dst] 输出
+| 场景 | GPU 实机 |
+|---|---|
+| ordinary pose_balanced / pose_balanced | PENDING-WINDOWS-GPU |
+| ordinary quality_pose_balanced / pose_balanced | PENDING-WINDOWS-GPU |
+| ordinary pose_balanced / legacy_random | PENDING-WINDOWS-GPU |
+| packed pose_balanced / pose_balanced | PENDING-WINDOWS-GPU |
+| packed quality_pose_balanced / quality_pose_balanced | PENDING-WINDOWS-GPU |
+
+### Matrix C — Fallback
+
+| 场景 | 自动化 | GPU 集成 |
+|---|---|---|
+| missing / invalid / strict / core SampleLoader | PASS（unit） | PENDING-WINDOWS-GPU |
+
+### Matrix D — Analyzer
+
+| 场景 | 自动化 |
+|---|---|
+| workers 1/2/auto, quick/strong, ordinary/packed, incremental, unicode, strict | PASS |
+
+---
+
+## 5. 实机执行协议（有 TF+GPU 时）
+
+```powershell
+# 1) 使用带 CUDA 的项目 venv
+# 2) Analyzer
+python main.py faceset-analyze --input-dir "D:\换脸项目\data_src\aligned" --workers 2
+python main.py faceset-analyze --input-dir "D:\换脸项目\data_dst\aligned" --workers 2
+
+# 3) 训练（示例 options-json 字符串，fp32 + adabelief）
+python main.py train SAEHD ... --options-json "{...enhancements...}"
+
+# 4) 记录 500+ iter、manual save、exit、resume 200+
+# 5) 将日志片段、iter time、VRAM 填回本文件 §3/§4 并改状态
 ```
 
 ---
 
-## 4. 实机记录与结论
+## 6. Verdict
 
-- **CPU / 纯逻辑层 (Layer 0 - Layer 5)**: **PASS (170/170 测试全部通过)**
-- **Windows Blackwell GPU 实机阶段**: 物理机按上述矩阵填报真实耗时与日志。
+```text
+Ticket 21 GPU gate：NOT PASS
+Batch 2 DONE：禁止
+原因：acceptance Python 无 TensorFlow/GPU；SAEHD 矩阵未实跑
+允许：继续独立 Review Ticket 18/20 代码；GPU 验收可另机补做
+```

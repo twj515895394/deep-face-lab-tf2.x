@@ -28,22 +28,24 @@
 
 ---
 
-## 当前功能状态
+## 当前功能状态（2026-07-30）
 
 ```text
-Faceset Analyzer：可用于报告与开发验证
+Faceset Analyzer：代码契约可用（workers / strong / incremental / strict）
 legacy_random：可继续使用与回归
 legacy_uniform_yaw：可继续使用与回归
-pose_balanced：修复前不用于正式训练结论
-quality_pose_balanced：修复前不用于正式训练结论
-Windows spawn：PENDING
-Windows FP32 + AdaBelief：PENDING
+pose_balanced：开发可用；生产签发仍待 Windows GPU 最终验收
+quality_pose_balanced：开发可用；生产签发仍待 Windows GPU 最终验收
+Windows spawn 单元 / test_batch*.py：PASS（实现侧）
+Windows SAEHD FP32 + AdaBelief 500/resume：PENDING-WINDOWS-GPU
+Batch 2 合并 main：禁止（Ticket 21 最终门未关闭）
 ```
 
-独立 Review 与修复计划：
+独立 Review 与交接：
 
-- [Batch 2 独立代码审查、问题汇总与修复总计划](../../.scratch/batch2-training-data-and-sampling/reports/batch2-independent-code-review-and-remediation-plan.md)
+- [Wave 1 Independent Review Round 4](../../.scratch/batch2-training-data-and-sampling/reports/wave1-independent-review-round4.md)
 - [当前项目交接入口](../../.handoff/current.md)
+- [Ticket 21 最终验收](../../.scratch/batch2-training-data-and-sampling/issues/21-docs-handoff-windows-gpu-final-acceptance.md)
 
 ---
 
@@ -56,32 +58,20 @@ Windows FP32 + AdaBelief：PENDING
 3. 宣称 `sampling.src` / `sampling.dst` 已生效，但当前代码只解析扁平配置；
 4. 宣称 `--options-json` 可以传配置文件，但当前只接受 JSON 字符串；
 5. 宣称 AMP、Quick96 等全量模型已接入，但当前真实运行时接线主要位于 SAEHD；
-6. 宣称 `--workers` 和 `--strong-fingerprint` 已生效，但当前实现尚未可靠消费参数；
-7. 没有提示 Analyzer 与 Loader 的 pose bucket Schema 漂移；
-8. 没有提示 Windows spawn 链路尚未真实验收。
+6. 早期宣称 `--workers` / `--strong-fingerprint` 为空壳——**Ticket 17 后已实现**，以完整使用说明为准；
+7. Analyzer / Loader pose bucket Schema 已由 Ticket 14 统一；
+8. Windows spawn 单元与 batch smoke 已通过；**SAEHD GPU 500/resume 仍待 Ticket 21**。
 
-因此本文件不再保留可复制的旧命令，避免弱模型、GUI 或用户继续复制错误配置。
+因此本文件不再保留可复制的旧错误命令。请以 [faceset-analyzer-complete-guide.md](faceset-analyzer-complete-guide.md) 与 `options-json` 权威参考为准。
 
 ---
 
-## 修复入口
-
-修复任务已拆分为 Ticket 14—21，入口见：
+## 修复与验收入口
 
 ```text
-.scratch/batch2-training-data-and-sampling/issues/
+Ticket 14—20：代码关口（见 reports/*-summary.md）
+Ticket 21：文档 + Windows GPU 最终验收 + 是否签发 Batch 2 DONE
+.handoff/current.md
 ```
 
-第一优先执行：
-
-```text
-14-unify-metadata-bucket-schema-and-e2e-contract.md
-```
-
-可由另一个独立 Agent 并行执行：
-
-```text
-19-fix-loss-window-save-boundary-and-observability.md
-```
-
-全部修复并完成 Windows GPU 验收前，不得重新把本功能标记为生产可用。
+**Windows GPU 最终验收完成前，不得把 Batch 2 Metadata Sampling 标记为生产 DONE / 合入 main。**

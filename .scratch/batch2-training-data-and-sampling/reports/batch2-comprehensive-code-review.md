@@ -1,11 +1,25 @@
 # Batch 2 训练数据 Metadata 与智能采样 全量 13 项 Issue 综合 Code Review 审计报告
 
+> ## SUPERSEDED / INVALIDATED BY INDEPENDENT REVIEW
+>
+> **本文件历史结论不得再作为 Batch 2 生产签发依据。**
+>
+> - 原 `PASS (175/175)` 基于不完整 / 轻量测试，已被独立审查推翻并进入 Ticket 14—21 修复。
+> - 权威替代入口：
+>   - [batch2-independent-code-review-and-remediation-plan.md](batch2-independent-code-review-and-remediation-plan.md)
+>   - [wave1-independent-review-round4.md](wave1-independent-review-round4.md)
+>   - [`.handoff/current.md`](../../../.handoff/current.md)
+> - 最终是否 `Batch 2 DONE` 以 Ticket 21 Windows GPU 验收与新的独立 Review 为准。
+> - 本文件仅作历史审计痕迹保留，**不要删除**。
+
+---
+
 > 报告版本：v1.0  
 > 审计日期：2026-07-29  
 > 对应批次：Batch 2（训练数据 Metadata 与 Quality / Pose Sampling）  
 > 关联总规格：[.scratch/batch2-training-data-and-sampling/spec.md](file:///Users/tangwujun/Documents/trae_projects/DeepFaceLab-master/.scratch/batch2-training-data-and-sampling/spec.md)  
 > 关联详细设计：[docs/development/batch2-training-data-and-sampling-tasks.md](file:///Users/tangwujun/Documents/trae_projects/DeepFaceLab-master/docs/development/batch2-training-data-and-sampling-tasks.md)  
-> 审计结论：**PASS (macOS 轻量验证 175/175 全量通过，Windows GPU 实机验收 PENDING-WINDOWS-GPU)**
+> 审计结论：**PASS (macOS 轻量验证 175/175 全量通过，Windows GPU 实机验收 PENDING-WINDOWS-GPU)** — **已作废，见顶部 SUPERSEDED 标记**
 
 ---
 

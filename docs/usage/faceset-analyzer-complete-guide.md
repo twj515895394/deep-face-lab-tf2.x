@@ -1,9 +1,9 @@
 # Faceset Analyzer 完整使用说明
 
-> 文档状态：ACTIVE / REVIEW-GATED  
-> 适用分支：`codex/batch2-metadata-sampling-design` 及后续修复分支  
+> 文档状态：ACTIVE  
+> 适用分支：`codex/batch2-ticket19-loss-window`（Batch 2 Wave 1 修复主干）  
 > 面向对象：DeepFaceLab 使用者、训练脚本维护者、GUI 调用方、后续开发 Agent  
-> 最后更新：2026-07-29  
+> 最后更新：2026-07-30  
 > 相关功能：Faceset Metadata、Pose-balanced Sampling、Quality + Pose Sampling
 
 ---
@@ -126,26 +126,27 @@ workspace/data_dst/aligned/faceset_metadata.v1.json
 
 ---
 
-## 4. 当前 Review Gate
+## 4. 当前能力状态（Ticket 14—20 代码关口后）
 
-本分支经过独立代码审查后发现 Analyzer、Loader、Sampling Runtime 和 Windows spawn 链路仍有阻断问题。修复 Ticket 14—21 完成并通过最终验收前：
+代码契约与 smoke 回归（`test_batch*.py`）已在 Windows Python 3.11.7 / spawn 下通过；独立 Review 已对 14/15/16/17/19 签发代码 PASS 或 CLOSED。Ticket 18/20 已实现并提交，待独立 Review。
 
-- Analyzer 可用于生成报告和观察数据集分布；
-- 不建议在正式训练中依赖 `pose_balanced`；
-- 不建议把 `quality_pose_balanced` 视为已完成生产验收；
-- 不得仅凭日志中的 `effective: pose_balanced` 判断姿态采样已经正确生效；
-- Windows 多进程训练必须等待真实 spawn 测试通过。
+| 能力 | 状态 |
+|---|---|
+| Faceset Analyzer full / incremental / force / strict | **代码可用** |
+| `--workers`（1 / N / auto） | **已实现**（spawn Pool） |
+| `--strong-fingerprint` | **已实现**（full content SHA256） |
+| strong→quick 降级 | **拒绝** exit code `7`，不覆盖 Sidecar |
+| 中文 / 空格 / Unicode 路径 | **必须支持**（见 §5.3） |
+| `legacy_random` / `legacy_uniform_yaw` | **可生产回归** |
+| `pose_balanced` / `quality_pose_balanced` | **开发可用**；正式生产签发仍待 Windows GPU 最终验收（Ticket 21） |
+| Windows SAEHD FP32 + AdaBelief 500/resume 200 | **ENV-VALIDATION-DEFERRED / PENDING-WINDOWS-GPU** |
 
-修复入口：
+修复与 Review 入口：
 
 ```text
-.scratch/batch2-training-data-and-sampling/reports/
-  batch2-independent-code-review-and-remediation-plan.md
-
-.scratch/batch2-training-data-and-sampling/issues/
-  14-unify-metadata-bucket-schema-and-e2e-contract.md
-  ...
-  21-docs-handoff-windows-gpu-final-acceptance.md
+.handoff/current.md
+.scratch/batch2-training-data-and-sampling/reports/wave1-independent-review-round4.md
+.scratch/batch2-training-data-and-sampling/issues/21-docs-handoff-windows-gpu-final-acceptance.md
 ```
 
 ---
@@ -256,10 +257,29 @@ python main.py faceset-analyze `
 | `--incremental` | 否 | 复用签名未变化的旧记录 | faceset 少量变化后使用 |
 | `--force` | 否 | 忽略旧 Sidecar，全量重算 | 数据状态不可信时使用 |
 | `--strict` | 否 | 无效样本导致非零退出 | CI、发布前验收使用 |
-| `--workers` | 否 | 计划中的并行分析参数 | Ticket 17 修复前不要依赖 |
-| `--strong-fingerprint` | 否 | 计划中的完整内容哈希 | Ticket 17 修复前不要依赖 |
+| `--workers` | 否 | 并行 Pass1：`1` 主进程；`N` spawn Pool；省略=auto `min(cpu,8)` | 大数据集可调高；失败会向上抛出 |
+| `--strong-fingerprint` | 否 | 使用完整文件内容 SHA256（strong）；默认 quick 为 first/last chunk | 需要更强同名替换检测时开启 |
 
-重要说明：当前分支中 `--workers` 和 `--strong-fingerprint` 已暴露 CLI，但尚未形成可信的运行时效果和端到端验收。Ticket 17 必须选择“真正实现”或“移除空壳参数”，不得继续保留无效参数并在文档中宣称已生效。
+### 7.1 退出码（当前实现）
+
+| Code | 含义 |
+|---:|---|
+| 0 | 成功写入 Metadata（strict 未拦截） |
+| 2 | 非法 `--workers` |
+| 3 | 输入目录/样本加载失败 |
+| 4 | 分析过程失败（含 worker fatal） |
+| 5 | strict 且存在 invalid sample，**拒绝覆盖** formal Sidecar |
+| 6 | 原子写入失败 |
+| 7 | strong→quick 降级被拒绝，**Sidecar 字节不变** |
+
+### 7.2 指纹模式策略
+
+```text
+quick → quick：可增量 reuse
+strong → strong：可增量 reuse
+quick → strong：全量重算（升级）
+strong → quick：拒绝 exit 7（禁止静默降级覆盖）
+```
 
 ---
 

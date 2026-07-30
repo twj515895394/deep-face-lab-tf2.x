@@ -34,7 +34,7 @@ Ticket 16 base：           0bb1fa094c3ddf0304eaf6cfcb9b11aac2eff400
 Ticket 16 impl commit：    f9f846ab255a97005890a4ed7b6d3740ee4119e8
 Ticket 17 工作分支：       codex/batch2-ticket17-analyzer-workers
 Ticket 17 base：           f9f846ab255a97005890a4ed7b6d3740ee4119e8
-Ticket 17 impl commit：    (see latest commit on branch)
+Ticket 17 impl commit：    e0e619ae7acc2b25e2f422db1b8efd5597723e55
 ```
 
 ```text

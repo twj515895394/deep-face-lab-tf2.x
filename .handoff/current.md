@@ -1,9 +1,9 @@
 # 当前项目交接入口
 
 > 本文件是新会话、新 Agent 和后续开发者的固定入口。  
-> 更新时间：2026-07-30 17:30 +08:00  
-> 当前交接：Ticket 18/20 代码已实现；Ticket 21 文档与证据已推进；**Windows GPU 最终验收仍未关闭**  
-> 当前状态：`T14-15-19-CLOSED / T16-17-PASS-CODE / T18-20-IMPL-AWAITING-REVIEW / T21-DOCS-PARTIAL-GPU-PENDING / BATCH2-NOT-DONE`
+> 更新时间：2026-07-30  
+> 当前交接：Batch 2 的 Ticket 14—21 **计划内代码、测试、Summary、使用文档与 Handoff 实施均已完成**；Ticket 18/20 已完成独立代码 Review。  
+> 当前状态：`ALL-TICKET-IMPLEMENTATION-COMPLETE / T14-20-CODE-GATES-COMPLETE / T21-WINDOWS-GPU-PENDING / BATCH2-CODE-COMPLETE-NOT-PRODUCTION-SIGNED`
 
 ---
 
@@ -11,13 +11,13 @@
 
 按顺序阅读：
 
-1. [Ticket 21 规约](../.scratch/batch2-training-data-and-sampling/issues/21-docs-handoff-windows-gpu-final-acceptance.md)
-2. [Ticket 21 Summary](../.scratch/batch2-training-data-and-sampling/reports/21-docs-handoff-windows-gpu-final-acceptance-summary.md)
-3. [Windows GPU 验收记录](../.scratch/batch2-training-data-and-sampling/reports/windows-gpu-acceptance.md)
-4. [Wave 1 Independent Review Round 4](../.scratch/batch2-training-data-and-sampling/reports/wave1-independent-review-round4.md)
-5. [Faceset Analyzer 完整使用说明](../docs/usage/faceset-analyzer-complete-guide.md)
-6. [options-json 权威参考](../docs/implementation/options-json-training-configuration-reference.md)
-7. Ticket 18 / 20 summary（reports 目录）
+1. [Ticket 18 / 20 独立 Review 与 Batch 2 完成状态](../.scratch/batch2-training-data-and-sampling/reports/18-20-independent-review-and-batch2-completion-status.md)
+2. [Ticket 21 规约](../.scratch/batch2-training-data-and-sampling/issues/21-docs-handoff-windows-gpu-final-acceptance.md)
+3. [Ticket 21 Summary](../.scratch/batch2-training-data-and-sampling/reports/21-docs-handoff-windows-gpu-final-acceptance-summary.md)
+4. [Windows GPU 验收记录](../.scratch/batch2-training-data-and-sampling/reports/windows-gpu-acceptance.md)
+5. [Wave 1 Independent Review Round 4](../.scratch/batch2-training-data-and-sampling/reports/wave1-independent-review-round4.md)
+6. [Faceset Analyzer 完整使用说明](../docs/usage/faceset-analyzer-complete-guide.md)
+7. [options-json 权威参考](../docs/implementation/options-json-training-configuration-reference.md)
 
 ---
 
@@ -27,79 +27,178 @@
 codex/batch2-ticket19-loss-window
 ```
 
+状态约束：
+
 ```text
-实现者不得自行签发 APPROVED / PASS / CLOSED / Batch 2 DONE
-current.md 可由实现者更新事实状态，但最终签发仍归独立 Reviewer / 集成负责人
+代码、测试和文档事实以当前分支最新 HEAD 为准
+未执行的 GPU / 大规模性能项目必须标记 deferred 或 pending
+不得把 PENDING-WINDOWS-GPU 写成 PASS-WINDOWS-GPU
+Batch 2 DONE / 合入 main 仍需要最终环境签发
 ```
 
 ---
 
-## 3. Commit 锚点（实现侧）
+## 3. 最新 Commit 锚点
 
 ```text
-Unicode paths：     e173ea6
-Ticket 20：         1ca7f17
-Ticket 18：         9a2c28b
-Wave 1 Review R4：  0742381
+Ticket 18 implementation： 9a2c28bf2da5a5bd4182ef8731fa22c1d5b2e058
+Ticket 20 implementation： 1ca7f178981c971c331108969c62f657f773000a
+Wave 1 Review R4：         0742381d10ad49848c9cfba33fc72a622c567e52
+Ticket 21 docs/handoff：   c53e8e1c521d3e8b9ec3260a750e32b6a2ee1abd
+Ticket 18/20 Final Review：5440770c47c4415bd018d24da92ba42b2a6a8566
 ```
 
-以 `git log -1` / `git rev-parse HEAD` 为准。
+当前分支 HEAD 应以 `git rev-parse HEAD` 为准。
 
 ---
 
-## 4. 权威状态
+## 4. 权威 Ticket 状态
 
 ```text
 Ticket 14：APPROVED / PASS / CLOSED
 Ticket 15：APPROVED / PASS / CLOSED
-Ticket 16：APPROVED / PASS-CODE（GPU/thread 归因 deferred）
-Ticket 17：APPROVED / PASS-CODE（1k/10k perf deferred）
+
+Ticket 16：APPROVED / PASS-CODE
+           GPU / thread attribution validation deferred
+
+Ticket 17：APPROVED / PASS-CODE
+           1k/10k performance/RSS validation deferred
+
+Ticket 18：APPROVED / PASS / CLOSED
+           incremental / force-full equivalence closed
+           canonical summary/report schema closed
+
 Ticket 19：APPROVED / PASS / CLOSED
+           save window / trainer control / fatal propagation closed
 
-Ticket 18：IMPLEMENTATION COMPLETE / AWAITING INDEPENDENT REVIEW
-Ticket 20：IMPLEMENTATION COMPLETE / AWAITING INDEPENDENT REVIEW
-           --options-json §9.1–9.2 已同步
+Ticket 20：APPROVED / PASS / CLOSED
+           optional Metadata fallback boundary closed
+           core SampleLoader/Memory/worker errors propagate
+           strict_validation and options-json docs synchronized
 
-Ticket 21：DOCS + HANDOFF PARTIAL
-           Windows GPU SAEHD 矩阵：PENDING-WINDOWS-GPU
-           本机验收 Python：无 TensorFlow
-           禁止 Batch 2 DONE
+Ticket 21：IMPLEMENTATION + DOCS COMPLETE
+           Windows GPU SAEHD final matrix pending
+           NOT CLOSED
+```
+
+准确表述：
+
+```text
+全部 Ticket 的计划内实施工作已经完成。
+Ticket 14—20 的代码门已经完成签发。
+Ticket 21 只剩真实 Windows GPU 最终环境验收，不再有计划内开发项。
 ```
 
 ---
 
-## 5. 测试证据（非 GPU）
+## 5. 已完成的 Batch 2 能力
 
 ```text
-Windows / Python 3.11.7 / spawn
+Metadata Schema / Identity / Fingerprint
+Faceset Analyzer ordinary + packed
+quick / strong fingerprint
+incremental / force-full equivalence
+trusted match / stale detection / strict atomic write
+legacy_random / legacy_uniform_yaw
+pose_balanced / quality_pose_balanced
+SRC / DST side configuration
+spawn-safe WeightedIndexHost and deterministic process cleanup
+optional Metadata fallback + core error propagation
+Trainer loss window / save / exit / resume control flow
+Unicode / 中文 / 空格路径 smoke
+完整使用文档、options-json 参考、Summary 和 Handoff
+```
+
+---
+
+## 6. 自动测试证据
+
+实现侧最新记录：
+
+```text
+OS：Windows
+Python：3.11.7
+start method：spawn
+
 python -m unittest discover -s tests/smoke -p "test_batch*.py" -q
-→ OK / EXIT=0（实现侧最近记录约 Ran 327）
-含 Unicode 中文路径用例
+Ran 331 tests
+OK
+shell EXIT=0
+```
+
+覆盖包含：
+
+```text
+Analyzer workers / strong / incremental / strict
+Incremental vs force-full equivalence
+Ordinary / Packed / Unicode
+Sampling fallback exception boundaries
+WeightedIndexHost / spawn lifecycle
+Trainer save controller（非 GPU）
+```
+
+GitHub 当前无 Actions/status check，因此不得写作 GitHub CI PASS。
+
+---
+
+## 7. Ticket 21 最终环境门
+
+当前 `windows-gpu-acceptance.md` 的事实状态：
+
+```text
+acceptance Python 未安装 TensorFlow
+SAEHD GPU 训练未启动
+Matrix A/B 未执行
+Ticket 21 GPU gate：NOT PASS / PENDING-WINDOWS-GPU
+```
+
+仍需在带 TensorFlow + CUDA 的 Windows 机器执行：
+
+```text
+SAEHD
+precision=fp32
+optimizer=adabelief
+ordinary + packed
+legacy_random / legacy_uniform_yaw
+pose_balanced / quality_pose_balanced
+连续训练 ≥500 iter
+manual save / exit
+resume ≥200 iter
+SRC / DST side config
+Fallback boundaries
+Loss Window 实际日志核对
+训练结束资源差集
+```
+
+完成后更新：
+
+```text
+.scratch/batch2-training-data-and-sampling/reports/windows-gpu-acceptance.md
+.scratch/batch2-training-data-and-sampling/reports/21-docs-handoff-windows-gpu-final-acceptance-summary.md
+.handoff/current.md
 ```
 
 ---
 
-## 6. Frontier（下一步）
+## 8. 当前 Frontier
 
 ```text
-1. 独立 Review Ticket 18 + 20
-2. 在装有 TF+CUDA 的 Windows 机上执行 Ticket 21 Matrix A/B（SAEHD fp32 + AdaBelief ≥500，save/exit/resume ≥200）
-3. 填写 windows-gpu-acceptance.md 实机段落
-4. 独立 Reviewer 决定是否签发 Batch 2 DONE / 允许合入 main
-```
-
-```text
-Ticket 21：未 resolved（缺 GPU 证据）
+开发 Frontier：无剩余 Batch 2 计划内代码 Ticket
+验收 Frontier：Ticket 21 Windows GPU final matrix
+Batch 2 implementation：COMPLETE
+Batch 2 production sign-off：PENDING-WINDOWS-GPU
 Batch 3：BLOCKED-BY-BATCH2-FINAL-SIGN-OFF
 ```
 
+若维护者决定豁免或延期 Ticket 21 的 Windows GPU 硬门，必须明确记录新的验收策略；不得把未执行的矩阵描述为已经通过。
+
 ---
 
-## 7. 安全判断
+## 9. 安全判断
 
 ```text
 legacy_random / legacy_uniform_yaw：可继续使用
-Analyzer：开发/验收可用；中文路径必须支持
-pose_balanced / quality_pose_balanced：可用于开发测试
-生产签发 / 合入 main：禁止，直到 Ticket 21 GPU 门关闭
+Analyzer 与 Metadata Sampling：代码门完成，可用于开发和环境验收
+pose_balanced / quality_pose_balanced：代码功能完成，生产签发等待 Ticket 21
+合入 main / Batch 2 DONE：等待 Windows GPU 最终签发或维护者明确变更验收规约
 ```

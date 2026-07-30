@@ -30,13 +30,17 @@ class TestBatch2LegacySamplingAdapters(unittest.TestCase):
         self.assertEqual(policy.describe(), {"mode": "legacy_random"})
 
         index_host = policy.build_index_host(samples)
-        self.assertIsInstance(index_host, mplib.IndexHost)
+        try:
+            self.assertIsInstance(index_host, mplib.IndexHost)
 
-        cli = index_host.create_cli()
-        fetched = cli.multi_get(5)
-        self.assertEqual(len(fetched), 5)
-        for idx in fetched:
-            self.assertTrue(0 <= idx < len(samples))
+            cli = index_host.create_cli()
+            fetched = cli.multi_get(5)
+            self.assertEqual(len(fetched), 5)
+            for idx in fetched:
+                self.assertTrue(0 <= idx < len(samples))
+        finally:
+            index_host.close()
+            self.assertFalse(index_host.thread.is_alive())
 
     def test_legacy_uniform_yaw_policy(self):
         from samplelib import SampleLoader, SampleType
@@ -47,13 +51,17 @@ class TestBatch2LegacySamplingAdapters(unittest.TestCase):
         self.assertEqual(policy.mode, "legacy_uniform_yaw")
 
         index_host = policy.build_index_host(samples)
-        self.assertIsInstance(index_host, mplib.Index2DHost)
+        try:
+            self.assertIsInstance(index_host, mplib.Index2DHost)
 
-        cli = index_host.create_cli()
-        fetched = cli.multi_get(5)
-        self.assertEqual(len(fetched), 5)
-        for idx in fetched:
-            self.assertTrue(0 <= idx < len(samples))
+            cli = index_host.create_cli()
+            fetched = cli.multi_get(5)
+            self.assertEqual(len(fetched), 5)
+            for idx in fetched:
+                self.assertTrue(0 <= idx < len(samples))
+        finally:
+            index_host.close()
+            self.assertFalse(index_host.thread.is_alive())
 
     def test_empty_samples_raises_value_error(self):
         policy_rand = LegacyRandomPolicy()

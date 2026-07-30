@@ -11,6 +11,27 @@ from samplelib.sampling.weighted_index_host import (
 )
 
 
+def _close_mp_queue(q) -> None:
+    """Best-effort Queue teardown to avoid residual QueueFeederThread leaks."""
+    if q is None:
+        return
+    try:
+        q.close()
+    except Exception:
+        pass
+    cancel = getattr(q, "cancel_join_thread", None)
+    if callable(cancel):
+        try:
+            cancel()
+            return
+        except Exception:
+            pass
+    try:
+        q.join_thread()
+    except Exception:
+        pass
+
+
 class TestBatch2WeightedIndexHost(unittest.TestCase):
 
     def test_single_cli_draw(self):
@@ -119,51 +140,59 @@ class TestBatch2WeightedIndexHost(unittest.TestCase):
     def test_request_id_rejects_stale_response(self):
         sq = multiprocessing.Queue()
         cq = multiprocessing.Queue()
-        closed = multiprocessing.Event()
-        fatal = multiprocessing.Event()
-        cli = WeightedIndexHostClient(
-            sq=sq,
-            cq=cq,
-            cq_id=0,
-            closed_event=closed,
-            fatal_event=fatal,
-            request_timeout_sec=1.0,
-            stats_timeout_sec=1.0,
-            host_ref=None,
-        )
-        # Preload a stale response for request_id=1; real request will be id=1 after first next.
-        # Force request counter so next id is 2, with stale id=1 still in queue.
-        cli._request_id = 1
-        cq.put(("OK", 1, [9, 9]))
-        cq.put(("OK", 2, [3, 4]))
+        try:
+            closed = multiprocessing.Event()
+            fatal = multiprocessing.Event()
+            cli = WeightedIndexHostClient(
+                sq=sq,
+                cq=cq,
+                cq_id=0,
+                closed_event=closed,
+                fatal_event=fatal,
+                request_timeout_sec=1.0,
+                stats_timeout_sec=1.0,
+                host_ref=None,
+            )
+            # Preload a stale response for request_id=1; real request will be id=1 after first next.
+            # Force request counter so next id is 2, with stale id=1 still in queue.
+            cli._request_id = 1
+            cq.put(("OK", 1, [9, 9]))
+            cq.put(("OK", 2, [3, 4]))
 
-        # multi_get will use request_id=2 and must ignore stale id=1
-        # But multi_get also puts to sq - drain is not needed for response matching.
-        # We need host not involved: put will succeed, wait reads cq.
-        # Race: multi_get puts draw request then waits. We already queued responses.
-        res = cli.multi_get(2)
-        self.assertEqual(res, [3, 4])
+            # multi_get will use request_id=2 and must ignore stale id=1
+            # But multi_get also puts to sq - drain is not needed for response matching.
+            # We need host not involved: put will succeed, wait reads cq.
+            # Race: multi_get puts draw request then waits. We already queued responses.
+            res = cli.multi_get(2)
+            self.assertEqual(res, [3, 4])
+        finally:
+            _close_mp_queue(sq)
+            _close_mp_queue(cq)
 
     def test_timeout_uses_configurable_short_timeout(self):
         sq = multiprocessing.Queue()
         cq = multiprocessing.Queue()
-        closed = multiprocessing.Event()
-        fatal = multiprocessing.Event()
-        cli = WeightedIndexHostClient(
-            sq=sq,
-            cq=cq,
-            cq_id=0,
-            closed_event=closed,
-            fatal_event=fatal,
-            request_timeout_sec=0.25,
-            stats_timeout_sec=0.25,
-            host_ref=None,
-        )
-        t0 = time.monotonic()
-        with self.assertRaises(TimeoutError):
-            cli.multi_get(1)
-        elapsed = time.monotonic() - t0
-        self.assertLess(elapsed, 2.0)
+        try:
+            closed = multiprocessing.Event()
+            fatal = multiprocessing.Event()
+            cli = WeightedIndexHostClient(
+                sq=sq,
+                cq=cq,
+                cq_id=0,
+                closed_event=closed,
+                fatal_event=fatal,
+                request_timeout_sec=0.25,
+                stats_timeout_sec=0.25,
+                host_ref=None,
+            )
+            t0 = time.monotonic()
+            with self.assertRaises(TimeoutError):
+                cli.multi_get(1)
+            elapsed = time.monotonic() - t0
+            self.assertLess(elapsed, 2.0)
+        finally:
+            _close_mp_queue(sq)
+            _close_mp_queue(cq)
 
     def test_fatal_draw_surfaces_runtime_error(self):
         host = WeightedIndexHost(
@@ -211,7 +240,17 @@ class TestBatch2WeightedIndexHost(unittest.TestCase):
         finally:
             host.thread = real_thread
             if real_thread.is_alive():
+                try:
+                    host.sq.put(("stop",))
+                except Exception:
+                    pass
                 real_thread.join(timeout=2.0)
+            # Ensure queues/feeder threads are released after sticky-thread simulation.
+            try:
+                host.close()
+            except Exception:
+                pass
+            self.assertFalse(real_thread.is_alive())
 
 
 if __name__ == "__main__":

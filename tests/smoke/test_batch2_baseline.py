@@ -159,16 +159,22 @@ class TestBatch2Baseline(unittest.TestCase):
         seed = 42
 
         host1 = mplib.IndexHost(count, rnd_seed=seed)
-        cli1 = host1.create_cli()
-        draws1 = [cli1.multi_get(1)[0] for _ in range(100)]
-
         host2 = mplib.IndexHost(count, rnd_seed=seed)
-        cli2 = host2.create_cli()
-        draws2 = [cli2.multi_get(1)[0] for _ in range(100)]
+        try:
+            cli1 = host1.create_cli()
+            draws1 = [cli1.multi_get(1)[0] for _ in range(100)]
 
-        self.assertEqual(draws1, draws2, "IndexHost with same seed must yield identical sequence")
-        first_epoch = set(draws1[:count])
-        self.assertEqual(len(first_epoch), count, "One full epoch of IndexHost should cover all indices")
+            cli2 = host2.create_cli()
+            draws2 = [cli2.multi_get(1)[0] for _ in range(100)]
+
+            self.assertEqual(draws1, draws2, "IndexHost with same seed must yield identical sequence")
+            first_epoch = set(draws1[:count])
+            self.assertEqual(len(first_epoch), count, "One full epoch of IndexHost should cover all indices")
+        finally:
+            host1.close()
+            host2.close()
+            self.assertFalse(host1.thread.is_alive())
+            self.assertFalse(host2.thread.is_alive())
 
     @unittest.skipUnless(cv2_available, "Requires OpenCV (cv2)")
     def test_index2d_host_bucket_sampling(self):
@@ -181,13 +187,17 @@ class TestBatch2Baseline(unittest.TestCase):
             [5, 6, 7, 8],
         ]
         host = mplib.Index2DHost(buckets)
-        cli = host.create_cli()
+        try:
+            cli = host.create_cli()
 
-        draws = [cli.multi_get(1)[0] for _ in range(30)]
-        self.assertEqual(len(draws), 30)
-        flattened = [idx for b in buckets for idx in b]
-        for d in draws:
-            self.assertIn(d, flattened)
+            draws = [cli.multi_get(1)[0] for _ in range(30)]
+            self.assertEqual(len(draws), 30)
+            flattened = [idx for b in buckets for idx in b]
+            for d in draws:
+                self.assertIn(d, flattened)
+        finally:
+            host.close()
+            self.assertFalse(host.thread.is_alive())
 
     @unittest.skipUnless(cv2_available, "Requires OpenCV (cv2)")
     def test_sample_generator_face_tensor_contract(self):

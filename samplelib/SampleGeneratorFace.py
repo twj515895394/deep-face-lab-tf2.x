@@ -127,40 +127,98 @@ class SampleGeneratorFace(SampleGeneratorBase):
     def finalize(self):
         """
         Explicit lifecycle cleanup:
-        1) stop generator worker processes
-        2) close index hosts (WeightedIndexHost / mplib hosts with close)
+        1) stop generator worker processes (deterministic terminate/kill/join)
+        2) close IPC queues via SubprocessGenerator.close()
+        3) close index hosts (WeightedIndexHost / mplib hosts with close)
         Does not rely on Python __del__ as the primary path.
+
+        Cleanup failures are collected and re-raised after best-effort work so
+        callers are never told finalize succeeded while workers remain alive.
+        Idempotent once all resources are confirmed released.
         """
         if getattr(self, "_finalized", False):
-            return
-        self._finalized = True
+            # Allow retry if a previous attempt left live workers / host threads.
+            live_workers = False
+            for g in getattr(self, "generators", None) or []:
+                p = getattr(g, "p", None)
+                if p is not None and getattr(p, "is_alive", lambda: False)():
+                    live_workers = True
+                    break
+            host_live = False
+            for host_attr in ("index_host", "ct_index_host"):
+                host = getattr(self, host_attr, None)
+                thread = getattr(host, "thread", None) if host is not None else None
+                if thread is not None and thread.is_alive():
+                    host_live = True
+                    break
+            if not live_workers and not host_live:
+                return
 
+        errors = []
         generators = getattr(self, "generators", None) or []
         for g in generators:
-            p = getattr(g, "p", None)
-            if p is not None:
+            if g is None:
+                continue
+            if hasattr(g, "close") and callable(getattr(g, "close")):
                 try:
-                    if p.is_alive():
-                        p.terminate()
-                    p.join(timeout=3)
-                except Exception:
-                    pass
+                    g.close()
+                except Exception as e:
+                    errors.append(e)
+                continue
+            if hasattr(g, "finalize") and callable(getattr(g, "finalize")):
+                try:
+                    g.finalize()
+                except Exception as e:
+                    errors.append(e)
+                continue
+            # Legacy fallback for generators without explicit close/finalize.
+            p = getattr(g, "p", None)
+            if p is None:
+                continue
+            try:
+                if p.is_alive():
+                    p.terminate()
+                p.join(timeout=3)
+                if p.is_alive():
+                    kill = getattr(p, "kill", None)
+                    if callable(kill):
+                        kill()
+                    p.join(timeout=2)
+                if p.is_alive():
+                    raise RuntimeError(
+                        f"SampleGeneratorFace worker did not exit "
+                        f"(pid={getattr(p, 'pid', None)})"
+                    )
                 try:
                     g.p = None
                 except Exception:
                     pass
+            except Exception as e:
+                errors.append(e)
 
         for host_attr in ("index_host", "ct_index_host"):
             host = getattr(self, host_attr, None)
             if host is not None and hasattr(host, "close"):
                 try:
                     host.close()
+                except Exception as e:
+                    errors.append(e)
+            # Only drop host ref when its thread is gone (or has no thread).
+            thread = getattr(host, "thread", None) if host is not None else None
+            if host is None or thread is None or not thread.is_alive():
+                try:
+                    setattr(self, host_attr, None)
                 except Exception:
                     pass
-            try:
-                setattr(self, host_attr, None)
-            except Exception:
-                pass
+
+        if errors:
+            # Do not mark fully finalized if anything failed; allow retry.
+            raise RuntimeError(
+                f"SampleGeneratorFace.finalize failed with {len(errors)} error(s): "
+                f"{errors[0]}"
+            ) from errors[0]
+
+        self._finalized = True
 
     def __del__(self):
         # Safety net for tests/tools that forget finalize(); training uses ModelBase.finalize.

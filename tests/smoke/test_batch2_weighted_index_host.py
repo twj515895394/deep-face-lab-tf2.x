@@ -183,6 +183,36 @@ class TestBatch2WeightedIndexHost(unittest.TestCase):
         finally:
             host.close()
 
+    def test_close_raises_when_host_thread_join_times_out(self):
+        """Join timeout must not be reported as a successful close."""
+        host = WeightedIndexHost(
+            np.array([0.5, 0.5], dtype=np.float64),
+            config=WeightedIndexHostConfig(thread_join_timeout_sec=0.05),
+        )
+        real_thread = host.thread
+
+        class StickyThread:
+            def is_alive(self):
+                return True
+
+            def join(self, timeout=None):
+                time.sleep(min(float(timeout or 0.05), 0.05))
+
+        host.thread = StickyThread()
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                host.close()
+            self.assertIn("join timeout", str(ctx.exception).lower())
+            self.assertTrue(host._closed)
+            self.assertTrue(host._closed_event.is_set())
+            # Second close while "alive" still fails instead of pretending success.
+            with self.assertRaises(RuntimeError):
+                host.close()
+        finally:
+            host.thread = real_thread
+            if real_thread.is_alive():
+                real_thread.join(timeout=2.0)
+
 
 if __name__ == "__main__":
     unittest.main()

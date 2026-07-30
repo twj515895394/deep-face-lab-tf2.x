@@ -318,13 +318,21 @@ class WeightedIndexHost:
         1) mark closing
         2) send stop
         3) join host thread with timeout
-        4) mark closed event
+        4) mark closed event (clients fail-fast)
         5) close queues best-effort
-        Idempotent.
+        Idempotent when the host thread has already exited.
+
+        If the host thread is still alive after join timeout, queues are still
+        closed so clients do not hang, but close() raises RuntimeError and the
+        thread handle is retained. A subsequent close() retries join / raises
+        again while the thread remains alive.
         """
         with self._state_lock:
             if self._closed and not self.thread.is_alive():
                 return
+            if self._closed and self.thread.is_alive():
+                # Previous close already failed; retry join before raising again.
+                pass
             already_closing = self._closing
             self._closing = True
 
@@ -334,9 +342,11 @@ class WeightedIndexHost:
             except Exception:
                 pass
 
+        timed_out = False
         if self.thread.is_alive():
             self.thread.join(timeout=float(self.config.thread_join_timeout_sec))
             if self.thread.is_alive():
+                timed_out = True
                 try:
                     print(
                         "WeightedIndexHost: host thread did not exit within join timeout",
@@ -354,10 +364,23 @@ class WeightedIndexHost:
                 q.close()
             except Exception:
                 pass
+            # Host request loop may be stuck; cancel feeder join to avoid hang.
+            cancel = getattr(q, "cancel_join_thread", None)
+            if callable(cancel):
+                try:
+                    cancel()
+                    continue
+                except Exception:
+                    pass
             try:
                 q.join_thread()
             except Exception:
                 pass
+
+        if timed_out:
+            raise RuntimeError(
+                "WeightedIndexHost: host thread did not exit within join timeout"
+            )
 
     def __del__(self):
         # Safety net only; callers must still use close()/finalize() explicitly.

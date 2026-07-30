@@ -73,10 +73,35 @@ class TestBatch2GeneratorSamplingSpawn(unittest.TestCase):
             self.assertEqual(arr.shape[0], batch_size)
             self.assertTrue(np.issubdtype(arr.dtype, np.floating) or arr.dtype == np.uint8 or arr.dtype == np.float32 or arr.dtype == np.float16)
 
+    def _capture_worker_handles(self, gen):
+        """Capture Process handles before finalize so tests do not trust g.p=None."""
+        handles = []
+        for g in getattr(gen, "generators", None) or []:
+            p = getattr(g, "p", None)
+            if p is not None:
+                handles.append(p)
+        return handles
+
+    def _assert_workers_reaped(self, handles, children_before):
+        for p in handles:
+            self.assertFalse(p.is_alive(), f"worker still alive pid={getattr(p, 'pid', None)}")
+            self.assertIsNotNone(p.exitcode)
+        # No new residual children relative to the pre-start baseline.
+        residual = [
+            c for c in multiprocessing.active_children()
+            if c not in children_before and c.is_alive()
+        ]
+        self.assertEqual(
+            residual,
+            [],
+            f"unexpected residual children: {[getattr(c, 'pid', None) for c in residual]}",
+        )
+
     def test_debug_false_ordinary_pose_balanced(self):
         config = SamplingConfig(mode=SamplingMode.POSE_BALANCED, seed=42)
         policy = PoseBalancedPolicy(config, runtime_metadata=self.usable_meta)
         batch_size = 2
+        children_before = set(multiprocessing.active_children())
         gen = SampleGeneratorFace(
             samples_path=self.ordinary_dir,
             debug=False,
@@ -86,6 +111,7 @@ class TestBatch2GeneratorSamplingSpawn(unittest.TestCase):
             sampling_policy=policy,
         )
         host = None
+        worker_handles = []
         try:
             self.assertTrue(gen.is_initialized())
             self.assertIsNotNone(gen.index_host)
@@ -99,19 +125,26 @@ class TestBatch2GeneratorSamplingSpawn(unittest.TestCase):
 
             stats_before_close = host.snapshot_stats()
             self.assertGreaterEqual(stats_before_close["total_draws"], batch_size)
+            worker_handles = self._capture_worker_handles(gen)
+            self.assertEqual(len(worker_handles), 2)
         finally:
             gen.finalize()
 
+        self._assert_workers_reaped(worker_handles, children_before)
         for g in gen.generators:
-            p = getattr(g, "p", None)
-            self.assertTrue(p is None or not p.is_alive())
+            self.assertIsNone(getattr(g, "p", None))
+            self.assertTrue(getattr(g, "_closed", False))
         if host is not None:
             self.assertFalse(host.thread.is_alive())
+
+        # finalize is idempotent after successful reaping
+        gen.finalize()
 
     def test_debug_false_packed_pose_balanced(self):
         config = SamplingConfig(mode=SamplingMode.POSE_BALANCED, seed=7)
         policy = PoseBalancedPolicy(config, runtime_metadata=self.usable_meta)
         batch_size = 2
+        children_before = set(multiprocessing.active_children())
         gen = SampleGeneratorFace(
             samples_path=self.packed_dir,
             debug=False,
@@ -121,22 +154,25 @@ class TestBatch2GeneratorSamplingSpawn(unittest.TestCase):
             sampling_policy=policy,
         )
         host = None
+        worker_handles = []
         try:
             self.assertTrue(gen.is_initialized())
             host = gen.index_host
             self._assert_batches(gen, batch_size=batch_size, n_batches=3)
+            worker_handles = self._capture_worker_handles(gen)
         finally:
             gen.finalize()
 
+        self._assert_workers_reaped(worker_handles, children_before)
         for g in gen.generators:
-            p = getattr(g, "p", None)
-            self.assertTrue(p is None or not p.is_alive())
+            self.assertIsNone(getattr(g, "p", None))
         if host is not None and hasattr(host, "thread"):
             self.assertFalse(host.thread.is_alive())
 
     def test_debug_false_legacy_random_regression(self):
         policy = LegacyRandomPolicy(seed=3)
         batch_size = 2
+        children_before = set(multiprocessing.active_children())
         gen = SampleGeneratorFace(
             samples_path=self.ordinary_dir,
             debug=False,
@@ -145,10 +181,13 @@ class TestBatch2GeneratorSamplingSpawn(unittest.TestCase):
             output_sample_types=self.sample_types_base,
             sampling_policy=policy,
         )
+        worker_handles = []
         try:
             self._assert_batches(gen, batch_size=batch_size, n_batches=2)
+            worker_handles = self._capture_worker_handles(gen)
         finally:
             gen.finalize()
+        self._assert_workers_reaped(worker_handles, children_before)
 
 
 if __name__ == "__main__":

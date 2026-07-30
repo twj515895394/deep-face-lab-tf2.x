@@ -642,12 +642,14 @@ class ModelBase(object):
         self.generate_next_samples()
 
     def finalize(self):
+        cleanup_errors = []
+
         if hasattr(self, 'preview_history_writer') and self.preview_history_writer is not None:
             try:
                 self.preview_history_writer.terminate()
                 self.preview_history_writer = None
-            except:
-                pass
+            except Exception as e:
+                cleanup_errors.append(e)
 
         # Prefer generator.finalize() so WeightedIndexHost / index hosts close after workers stop.
         generator_lists = []
@@ -671,24 +673,50 @@ class ModelBase(object):
                     try:
                         gen.finalize()
                         continue
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        cleanup_errors.append(e)
+                        # Fall through to legacy process reaping only when finalize
+                        # left workers without raising a clean exit, or as backup.
 
                 if hasattr(gen, 'generators'):
                     for g in gen.generators:
-                        if hasattr(g, 'p') and g.p is not None:
+                        if hasattr(g, 'close') and callable(getattr(g, 'close')):
                             try:
-                                g.p.terminate()
-                                g.p.join(timeout=3)
-                            except Exception:
-                                pass
-                            g.p = None
+                                g.close()
+                            except Exception as e:
+                                cleanup_errors.append(e)
+                            continue
+                        if hasattr(g, 'p') and g.p is not None:
+                            p = g.p
+                            try:
+                                if p.is_alive():
+                                    p.terminate()
+                                p.join(timeout=3)
+                                if p.is_alive():
+                                    kill = getattr(p, 'kill', None)
+                                    if callable(kill):
+                                        kill()
+                                    p.join(timeout=2)
+                                if p.is_alive():
+                                    raise RuntimeError(
+                                        f"ModelBase.finalize: worker still alive "
+                                        f"(pid={getattr(p, 'pid', None)})"
+                                    )
+                                g.p = None
+                            except Exception as e:
+                                cleanup_errors.append(e)
 
         if hasattr(self, 'model_data'):
             self.model_data = None
 
         nn.close_session()
         gc.collect()
+
+        if cleanup_errors:
+            raise RuntimeError(
+                f"ModelBase.finalize failed with {len(cleanup_errors)} cleanup error(s): "
+                f"{cleanup_errors[0]}"
+            ) from cleanup_errors[0]
 
     def is_first_run(self):
         return self.iter == 0

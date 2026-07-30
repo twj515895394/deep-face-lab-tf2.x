@@ -384,8 +384,25 @@ class WeightedIndexHost:
 
     def __del__(self):
         # Safety net only; callers must still use close()/finalize() explicitly.
+        # Never run full close() here: queue feeder teardown + stderr logging during
+        # interpreter finalization can hard-crash Windows discover (shell exit != 0).
         try:
-            self.close()
+            is_finalizing = getattr(sys, "is_finalizing", None)
+            if callable(is_finalizing) and is_finalizing():
+                return
+            self._closing = True
+            self._closed = True
+            if getattr(self, "_closed_event", None) is not None:
+                try:
+                    self._closed_event.set()
+                except Exception:
+                    pass
+            th = getattr(self, "thread", None)
+            if th is not None and getattr(th, "is_alive", lambda: False)():
+                try:
+                    self.sq.put(("stop",))
+                except Exception:
+                    pass
         except Exception:
             pass
 

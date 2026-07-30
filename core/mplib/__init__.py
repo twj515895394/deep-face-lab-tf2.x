@@ -14,6 +14,8 @@ class IndexHost():
         self.sq = multiprocessing.Queue()
         self.cqs = []
         self.clis = []
+        self._stop = threading.Event()
+        self._closed = False
         self.thread = threading.Thread(target=self.host_thread, args=(indexes_count,rnd_seed) )
         self.thread.daemon = True
         self.thread.start()
@@ -25,9 +27,15 @@ class IndexHost():
         shuffle_idxs = []
         sq = self.sq
 
-        while True:
+        while not self._stop.is_set():
             while not sq.empty():
-                obj = sq.get()
+                try:
+                    obj = sq.get()
+                except Exception:
+                    break
+                if obj is None:
+                    self._stop.set()
+                    break
                 cq_id, count = obj[0], obj[1]
 
                 result = []
@@ -38,13 +46,48 @@ class IndexHost():
                     result.append(shuffle_idxs.pop())
                 self.cqs[cq_id].put (result)
 
+            if self._stop.is_set():
+                break
             time.sleep(0.001)
 
     def create_cli(self):
+        if self._closed or self._stop.is_set():
+            raise RuntimeError("IndexHost is closed; cannot create new client.")
         cq = multiprocessing.Queue()
         self.cqs.append ( cq )
         cq_id = len(self.cqs)-1
         return IndexHost.Cli(self.sq, cq, cq_id)
+
+    def close(self):
+        """Stop host thread and release queues (Ticket 16 lifecycle)."""
+        if self._closed and not self.thread.is_alive():
+            return
+        self._stop.set()
+        try:
+            self.sq.put(None)
+        except Exception:
+            pass
+        if self.thread.is_alive():
+            self.thread.join(timeout=2.0)
+        self._closed = True
+        for q in list(self.cqs) + [self.sq]:
+            try:
+                q.close()
+            except Exception:
+                pass
+            cancel = getattr(q, "cancel_join_thread", None)
+            if callable(cancel):
+                try:
+                    cancel()
+                    continue
+                except Exception:
+                    pass
+            try:
+                q.join_thread()
+            except Exception:
+                pass
+        if self.thread.is_alive():
+            raise RuntimeError("IndexHost: host thread did not exit within join timeout")
 
     # disable pickling
     def __getstate__(self):
@@ -74,6 +117,8 @@ class Index2DHost():
         self.sq = multiprocessing.Queue()
         self.cqs = []
         self.clis = []
+        self._stop = threading.Event()
+        self._closed = False
         self.thread = threading.Thread(target=self.host_thread, args=(indexes2D,) )
         self.thread.daemon = True
         self.thread.start()
@@ -93,9 +138,15 @@ class Index2DHost():
         #print(idxs_2D)
         sq = self.sq
 
-        while True:
+        while not self._stop.is_set():
             while not sq.empty():
-                obj = sq.get()
+                try:
+                    obj = sq.get()
+                except Exception:
+                    break
+                if obj is None:
+                    self._stop.set()
+                    break
                 cq_id, count = obj[0], obj[1]
 
                 result = []
@@ -127,13 +178,48 @@ class Index2DHost():
 
                 self.cqs[cq_id].put (result)
 
+            if self._stop.is_set():
+                break
             time.sleep(0.001)
 
     def create_cli(self):
+        if self._closed or self._stop.is_set():
+            raise RuntimeError("Index2DHost is closed; cannot create new client.")
         cq = multiprocessing.Queue()
         self.cqs.append ( cq )
         cq_id = len(self.cqs)-1
         return Index2DHost.Cli(self.sq, cq, cq_id)
+
+    def close(self):
+        """Stop host thread and release queues (Ticket 16 lifecycle)."""
+        if self._closed and not self.thread.is_alive():
+            return
+        self._stop.set()
+        try:
+            self.sq.put(None)
+        except Exception:
+            pass
+        if self.thread.is_alive():
+            self.thread.join(timeout=2.0)
+        self._closed = True
+        for q in list(self.cqs) + [self.sq]:
+            try:
+                q.close()
+            except Exception:
+                pass
+            cancel = getattr(q, "cancel_join_thread", None)
+            if callable(cancel):
+                try:
+                    cancel()
+                    continue
+                except Exception:
+                    pass
+            try:
+                q.join_thread()
+            except Exception:
+                pass
+        if self.thread.is_alive():
+            raise RuntimeError("Index2DHost: host thread did not exit within join timeout")
 
     # disable pickling
     def __getstate__(self):

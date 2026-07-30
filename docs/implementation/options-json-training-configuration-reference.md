@@ -621,25 +621,26 @@ min_sample_weight < max_sample_weight
 | JSON Path | `enhancements.runtime.fallback_on_optional_error` |
 | 类型 | bool |
 | 默认 | `true` |
-| 状态 | `IMPLEMENTED` 基础字段；Sampling 行为 `BATCH2-PLANNED` |
+| 状态 | `IMPLEMENTED`（Ticket 20：Sampling 异常边界已收窄） |
 
-`true` 时允许以下 optional 错误回退：
+`true` 时允许以下 **optional Metadata** 错误回退到 legacy sampling：
 
 - Metadata missing；
 - invalid JSON sidecar；
 - unsupported schema；
-- 匹配率不足；
-- 静态权重/概率非法；
-- optional stats 失败。
+- 匹配率不足 / stale / duplicate 等 loader 结构化状态；
+- Metadata 专属 I/O 与 JSON parse 窄异常。
 
-不得吞掉：
+**不得**因本开关吞掉（无论 true/false 均 raise）：
 
-- no training data；
-- SampleProcessor 错误；
-- TensorFlow 错误；
-- 模型 save/load 错误；
-- worker 持续崩溃；
+- SampleLoader / 训练数据为空 / 权限错误；
+- MemoryError / OOM；
+- SampleProcessor / TensorFlow / 模型 save-load；
+- WeightedIndexHost / worker 核心失败；
+- 编程错误与未分类 Exception；
 - 用户传入的 `--options-json` 本身损坏。
+
+SampleLoader 在 optional Metadata try **之外**执行（Ticket 20）。
 
 ### 9.2 `strict_validation`
 
@@ -648,9 +649,22 @@ min_sample_weight < max_sample_weight
 | JSON Path | `enhancements.runtime.strict_validation` |
 | 类型 | bool |
 | 默认 | `false` |
-| 状态 | `IMPLEMENTED` 基础字段；Sampling 行为 `BATCH2-PLANNED` |
+| 状态 | `IMPLEMENTED`（Ticket 20：Sampling 已接入） |
 
-严格模式只决定智能增强是否拒绝启动，不得让 legacy 训练入口失效。
+当 `strict_validation=true` 时：
+
+- optional Metadata missing/invalid/mismatch **拒绝**启动 metadata sampling 模式（raise）；
+- 即使 `fallback_on_optional_error=true` 也不得静默回退；
+- 不影响 `training.enabled=false` 时的纯 legacy 入口。
+
+决策矩阵（optional Metadata 问题）：
+
+| fallback_on_optional_error | strict_validation | 结果 |
+|---|---|---|
+| true | false | fallback + warning |
+| true | true | raise |
+| false | false | raise |
+| false | true | raise |
 
 ---
 

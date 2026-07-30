@@ -2,451 +2,680 @@
 
 ## 1. 文档定位
 
-本文档定义 DeepFaceLab TF2.x 增强路线中的一个核心方向：在不修改 SAEHD / DF / LIAE 主模型架构的情况下，实现：
+本文定义 DeepFaceLab TF2.x 增强路线中的核心闭环：
 
-> Source Identity + Source Face Geometry + Destination Pose/Expression 的高质量融合。
+> Source Identity Appearance + Source Identity Geometry + Destination Pose / Expression / Motion。
 
-当前 DFL 最大的问题之一：
+目标是在不修改 SAEHD / DF / LIAE 主模型架构的第一版方案中，使训练学习到的 src 几何能够通过标准 Geometry Bridge 进入 Merge，并在视频中稳定保留。
 
-- 五官可以较好迁移到 src；
-- 皮肤纹理可以接近 src；
-- 但是脸宽、下颌、脸型比例经常仍接近 dst。
+本文负责训练与 Merge 的联合算法边界，不替代：
 
-该问题不是单纯训练问题，而是 Training 与 Merge 共同造成的结果。
+- 总实施计划；
+- 正式 Batch Ticket；
+- 具体文件和函数施工文档；
+- Windows GPU 环境验收记录。
+
+路线调整：
+
+```text
+先完成 Minimal Loss Hook + Identity Geometry
+再完成 Shape Template / Hybrid Landmark / Warp / Mask / Temporal
+最后叠加 Identity Appearance / Region / Boundary / Frequency
+```
 
 ---
 
-# 2. 核心问题分析
+## 2. 核心问题
 
-## 2.1 Identity 不应该只包含纹理
+当前 DFL 常见现象：
 
-传统换脸通常认为 Identity 包含：
+- 五官可以较好迁移到 src；
+- 皮肤和纹理可以接近 src；
+- 脸宽、下颌、下巴和外轮廓仍明显接近 dst。
 
-- 眼睛
-- 鼻子
-- 嘴巴
-- 皮肤纹理
+该问题由 Training 和 Merge 共同造成：
 
-但是人脸识别中，几何结构同样属于身份信息。
-
-因此重新定义：
-
-## Identity Appearance
-
-包括：
-
-- 五官细节
-- 肤质
-- 颜色
-- 纹理
-
-## Identity Geometry
-
-包括：
-
-- 脸宽
-- 下颌
-- 下巴长度
-- 颧骨比例
-- 眼距
-- 鼻脸比例
-
-最终身份表示：
-
+```text
+训练侧：缺少明确的 Identity Geometry 监督
+Merge 侧：dst landmarks + 单一 Affine + dst mask 主导最终几何
 ```
+
+因此：
+
+```text
+训练 Loss 改善
+    ≠
+最终视频自动保留 src 脸型
+```
+
+必须建立端到端几何链路。
+
+---
+
+## 3. Identity 定义
+
+### 3.1 Identity Appearance
+
+包括：
+
+- 五官细节；
+- 肤质；
+- 颜色；
+- 局部纹理；
+- 眉毛、眼睛、鼻子和嘴的外观特征。
+
+### 3.2 Identity Geometry
+
+包括：
+
+- 脸宽；
+- 下颌；
+- 下巴长度；
+- 颧骨比例；
+- 眼距；
+- 鼻宽与脸宽比例；
+- 稳定五官相对位置。
+
+完整身份：
+
+```text
 Identity = Appearance + Geometry
 ```
 
----
-
-# 3. 当前 DFL 为什么保留 dst 脸型
-
-当前流程：
-
-```
-dst frame
-   |
-landmarks
-   |
-Affine alignment
-   |
-SAEHD prediction
-   |
-Merge
-   |
-original frame
-```
-
-主要问题：
-
-## 3.1 对齐坐标由 dst 决定
-
-当前 face transform 基于 dst landmarks。
-
-结果：
-
-- 脸的位置由 dst 决定；
-- 尺寸由 dst 决定；
-- 基础几何由 dst 决定。
+本轮路线优先 Geometry 闭环。Appearance 和通用画质 Loss 在闭环完成后进入 Batch 7。
 
 ---
 
-## 3.2 Mask 限制 src 外轮廓
+## 4. src / dst 职责
 
-当前 mask 通常包含：
+### Source 提供
 
-- hull mask
-- XSeg mask
-- predicted mask
+- Identity Appearance；
+- 脸宽；
+- 下颌和下巴；
+- 颧骨；
+- 稳定五官比例；
+- Source Shape Template。
 
-大量情况下等价于：
+### Destination 提供
 
-```
-src prediction ∩ dst face region
-```
-
-因此 src 脸型超出 dst 轮廓的部分会被裁掉。
-
----
-
-# 4. 总体设计方案
-
-最终 Pipeline：
-
-```
-Dataset
- |
-Training
- |
-Predict
- |
-Source Shape Extraction
- |
-Hybrid Geometry
- |
-Shape-aware Warp
- |
-Shape-aware Mask
- |
-Blend
- |
-Temporal Stabilization
-```
-
----
-
-# 5. Source Shape Template
-
-为每个 src identity 建立几何模板。
-
-生成流程：
-
-1. 收集 src faceset；
-2. 提取 landmarks；
-3. 筛选高质量正脸；
-4. Canonical Normalize；
-5. 计算稳定几何中心。
-
-保存：
-
-```
-model_name.srcshape
-```
-
-内容：
-
-- canonical landmarks
-- jaw contour
-- face width ratio
-- cheek ratio
-- chin ratio
-- confidence
-
----
-
-# 6. Training 优化方向
-
-训练阶段增加 Identity Geometry 监督。
-
-## Shape Loss
+- yaw / pitch / roll；
+- 眼睛开合；
+- 嘴部运动；
+- 眉毛和表情；
+- 光照；
+- 遮挡；
+- 视频运动状态。
 
 目标：
 
-```
-predicted face shape ≈ source shape
+```text
+src stable identity geometry
++
+dst dynamic pose and expression
 ```
 
-可使用：
-
-- landmark geometry loss
-- jaw loss
-- contour loss
-- parsing region loss
+禁止简单使用 src 完整 Landmark 替换 dst 完整 Landmark。
 
 ---
 
-# 7. Hybrid Landmark Engine
+## 5. 总体 Pipeline
 
-不能简单替换 dst landmarks。
-
-需要拆分职责：
-
-## Source 提供
-
-- 脸宽
-- 下颌
-- 下巴
-- 固定五官比例
-
-## Destination 提供
-
-- yaw
-- pitch
-- roll
-- 眼睛开合
-- 嘴部运动
-- 表情变化
-
-最终：
-
+```text
+SRC / DST Dataset
+        ↓
+Metadata / Smart Sampling
+        ↓
+Minimal Loss Hook
+        ↓
+Identity Geometry Training
+        ↓
+Source Shape Template
+        ↓
+Prediction
+        ↓
+Hybrid Landmark Engine
+        ↓
+Piecewise Affine Warp
+        ↓
+Shape-aware Soft Mask
+        ↓
+Color / Blend
+        ↓
+Temporal Stabilization
+        ↓
+Final Video
 ```
-Hybrid Landmark = Source Identity Geometry
-                + Destination Pose
-                + Destination Expression Offset
-```
+
+Batch 7 的 Appearance / Region / Boundary / Frequency Loss 可以改善训练输出，但不是上面 Geometry Pipeline 的前置依赖。
 
 ---
 
-# 8. Shape-aware Merge
+## 6. Batch 3：训练侧 Geometry MVP
 
-## 8.1 不推荐只使用 Affine
+### 6.1 Minimal Loss Hook
 
-Affine 只能：
+必须提供：
 
-- 平移
-- 缩放
-- 旋转
+- 独立开关和权重；
+- 单项 Loss 日志；
+- shape / dtype / mask 契约；
+- NaN / Inf 检查；
+- 保存恢复兼容；
+- 关闭后保持基线。
 
-不能改变：
+本阶段只为 Geometry 提供必要基础，不批量引入通用 Loss。
 
-- 下颌形状
-- 脸宽比例
-- 局部轮廓
+### 6.2 Shape Anchor
+
+生成流程：
+
+```text
+SRC faceset
+  ↓
+可信 Landmark / 质量 / 遮挡筛选
+  ↓
+Canonical Normalize
+  ↓
+异常比例过滤
+  ↓
+Median / Trimmed Mean 聚合
+  ↓
+Shape Anchor
+```
+
+需要输出：
+
+- canonical landmarks；
+- ratio vector；
+- confidence；
+- sample count；
+- identity / faceset fingerprint；
+- generator version。
+
+### 6.3 Landmark / Ratio Loss
+
+第一版优先约束：
+
+```text
+face_width / face_height
+jaw_width / face_width
+chin_length / face_height
+cheek_width / face_width
+eye_distance / face_width
+nose_width / face_width
+```
+
+Geometry Loss 不应直接约束 dst 的动态眼睛和嘴部状态接近 src Anchor。
+
+### 6.4 Minimal Curriculum
+
+```text
+A：Reconstruction
+B：Geometry Ramp
+C：Geometry Stable
+```
+
+阶段必须可追踪、可保存和可恢复。
 
 ---
 
-## 8.2 推荐 Piecewise Affine Warp
+## 7. Batch 4：Source Shape Template
 
-流程：
+### 7.1 作用
 
+Source Shape Template 是训练侧和 Merge 侧之间的权威几何契约。
+
+建议产物：
+
+```text
+model_name.srcshape
 ```
+
+或等价独立 sidecar。
+
+### 7.2 建议内容
+
+```text
+schema_version
+generator_version
+source_identity
+faceset_fingerprint
+canonical_landmarks
+face_width_ratio
+jaw_ratio
+cheek_ratio
+chin_ratio
+eye_distance_ratio
+nose_width_ratio
+quality
+confidence
+sample_summary
+```
+
+### 7.3 生命周期
+
+必须支持：
+
+- 生成；
+- 保存；
+- 原子写入；
+- 加载；
+- Schema 校验；
+- Identity / Faceset 校验；
+- 重建；
+- 缺失和异常回退。
+
+### 7.4 优先级规则
+
+需要在正式 Ticket 中冻结：
+
+```text
+用户显式指定 Template
+训练生成 Template
+离线 faceset 生成 Template
+自动发现 Template
+```
+
+不得在多个来源冲突时静默选择。
+
+### 7.5 兼容原则
+
+- 不修改旧模型权重格式；
+- 旧模型没有 Template 时继续传统 Merge；
+- Template 不匹配时拒绝 Shape Merge，但不阻止传统 Merge；
+- 第一版允许完全离线生成。
+
+---
+
+## 8. Batch 5：Hybrid Landmark Engine
+
+### 8.1 核心表达
+
+```text
+Hybrid Landmark
+=
+src Identity Geometry
++ dst Pose Transform
++ dst Expression Offset
+```
+
+### 8.2 Landmark 分区
+
+建议至少区分：
+
+- 外轮廓 / Jaw；
+- Cheek / Chin；
+- Eyes；
+- Brows；
+- Nose；
+- Mouth；
+- Stable feature ratios；
+- Dynamic expression regions。
+
+### 8.3 `source_shape_power`
+
+语义：
+
+```text
+0：传统 dst 几何
+中间值：src Identity Geometry 与 dst 动态几何融合
+高值：更强 src 脸型迁移实验
+```
+
+硬契约：
+
+```text
+source_shape_power = 0
+≈
+传统 Merge 几何路径
+```
+
+### 8.4 Confidence Gate
+
+以下情况应自动降低 Geometry 强度或回退：
+
+- Template confidence 低；
+- 当前帧 Landmark confidence 低；
+- 极端 yaw / pitch；
+- 严重遮挡；
+- Landmark 拓扑异常；
+- 当前帧与 Template 的比例差异超出安全阈值。
+
+---
+
+## 9. Batch 5：Piecewise Affine Warp
+
+### 9.1 为什么不只使用 Affine
+
+单一 Affine 只能表达：
+
+- 平移；
+- 缩放；
+- 旋转。
+
+不能可靠表达：
+
+- 下颌变化；
+- 脸宽比例；
+- 下巴长度；
+- 局部轮廓变化。
+
+### 9.2 第一版方案
+
+```text
 predicted face
-      |
-landmarks
-      |
-triangle mesh
-      |
+  ↓
+source / hybrid landmark mesh
+  ↓
+triangle topology
+  ↓
 local affine warp
-      |
-shape adapted face
+  ↓
+shape-adapted prediction
 ```
 
-优点：
+采用 Piecewise Affine 的原因：
 
-- 与 OpenCV 兼容；
-- 不需要修改模型；
-- 可局部控制；
-- 兼容旧模型。
+- OpenCV 支持成熟；
+- 不修改模型结构；
+- 局部可控；
+- 容易可视化和测试；
+- 失败时容易回退。
+
+### 9.3 安全检查
+
+- Landmark 数量和顺序；
+- 坐标有限；
+- 三角拓扑固定；
+- 三角面积下限；
+- 翻转检测；
+- 越界裁剪；
+- 空洞检测；
+- Warp 强度上限；
+- 回退原因日志。
+
+第一版不优先 TPS 或网络化 Warp。
 
 ---
 
-# 9. Shape-aware Mask
+## 10. Batch 6：Shape-aware Soft Mask
 
-新的 Mask 模式：
+### 10.1 当前问题
 
+传统 Mask 大量情况下接近：
+
+```text
+src prediction ∩ dst face region
 ```
+
+这会把已经 Warp 的 src 轮廓重新裁回 dst。
+
+### 10.2 新 Mask 原则
+
+- 中心身份区域优先 src；
+- Jaw / Cheek / Chin 使用软过渡；
+- 遮挡区域保持 dst；
+- 不把 `predicted_mask * dst_mask` 作为唯一规则；
+- Mask 需要理解 Warp 后的轮廓；
+- 传统 Mask 始终可选。
+
+建议模式：
+
+```text
 off
-source-contour
+source_contour
 hybrid
 ```
 
-推荐：
+第一版推荐 `hybrid`，但默认仍保持 `off`。
 
-```
-hybrid
-```
+### 10.3 遮挡处理
 
-原则：
+需要处理：
 
-src 控制：
+- 头发；
+- 手；
+- 眼镜；
+- 麦克风；
+- 面部配饰；
+- 大角度侧脸；
+- Landmark 失败；
+- XSeg / predicted mask 冲突。
 
-- 身份区域
-- 脸型轮廓
-
-dst 控制：
-
-- 遮挡
-- 表情边界
-
-避免简单：
-
-```
-src_mask * dst_mask
-```
-
-因为会重新恢复 dst 脸型。
+遮挡置信度不足时应降低 Shape 强度或回退传统路径。
 
 ---
 
-# 10. Temporal Stabilization
+## 11. Batch 6：Temporal Stabilization
 
-视频必须处理时序稳定。
+视频需要平滑：
 
-需要平滑：
+- Hybrid Landmarks；
+- Warp 参数；
+- Mask contour；
+- `source_shape_power`；
+- Confidence Gate。
 
-- hybrid landmarks
-- warp field
-- mask contour
-- shape power
+第一版：
 
-推荐：
-
-- EMA
-- One Euro Filter
+- EMA；
+- One Euro Filter；
+- Scene Cut Reset；
+- Tracking Lost Reset；
+- 参数突变保护。
 
 避免：
 
-- 脸宽跳动
-- 下巴抖动
-- 边缘闪烁
+- 脸宽跳动；
+- 下巴闪烁；
+- 外轮廓呼吸；
+- Mask Flicker；
+- 场景切换状态污染。
+
+单帧模式不强制启用 Temporal。
 
 ---
 
-# 11. 参数设计
+## 12. Batch 7：身份外观与画质增强
 
-新增：
+在 Geometry Pipeline 稳定后，再加入：
 
-```
-face_shape_mode
+- Identity Appearance Loss；
+- Region Loss；
+- Boundary Loss；
+- Frequency Loss；
+- 完整 Multi-objective Curriculum。
 
-source_shape_power
+这些模块的目的：
 
-shape_mask_mode
-```
+- 提高五官和纹理身份；
+- 改善局部区域；
+- 改善训练输出边缘；
+- 增强高频细节。
 
-示例：
+它们不能替代：
 
-```
-source_shape_power=0
-```
+- Source Shape Template；
+- Hybrid Landmark；
+- Warp；
+- Shape-aware Mask；
+- Temporal。
 
-完全保持当前 DFL。
-
-```
-source_shape_power=50
-```
-
-中等 src 脸型迁移。
-
-```
-source_shape_power=100
-```
-
-最大实验模式。
+Batch 7 必须在 Batch 6 的稳定基线上逐项消融，避免同时启用造成归因失败。
 
 ---
 
-# 12. 工程实施路线
+## 13. 参数边界
 
-## Phase 1
+示例结构仅用于表达职责，字段名以正式 Ticket 为准：
 
-训练侧：
+```yaml
+training:
+  identity_geometry:
+    enabled: false
+    weight: 0.0
+    anchor_path: null
 
-- Shape Loss
-- Landmark Metrics
-- Shape Evaluation
+shape_template:
+  enabled: false
+  path: null
+  rebuild: false
 
-## Phase 2
+shape_merge:
+  enabled: false
+  source_shape_power: 0
+  warp_mode: piecewise_affine
+  mask_mode: off
+  temporal_smoothing: false
+```
 
-数据侧：
+默认行为：
 
-- Source Shape Template
-- Identity Geometry Cache
+```text
+identity_geometry.enabled = false
+shape_template.enabled = false
+shape_merge.enabled = false
+source_shape_power = 0
+mask_mode = off
+temporal_smoothing = false
+```
 
-## Phase 3
-
-Merge：
-
-- Hybrid Landmark
-- Piecewise Warp
-- Shape Mask
-
-## Phase 4
-
-视频：
-
-- Temporal Stabilization
-
-## Phase 5
-
-UI：
-
-提供高级模式开关。
+GUI 只应传用户实际启用或修改的参数，底层默认值由 DFL 统一管理。
 
 ---
 
-# 13. 验收指标
+## 14. 工程实施路线
 
-新增评价：
+### Phase 1 / Batch 3
 
-## Shape Retention Ratio
+- Minimal Loss Hook；
+- Shape Anchor；
+- Landmark / Ratio Loss；
+- Geometry Curriculum；
+- Geometry GPU A/B。
 
-```
-Merged Shape Score
-------------------
-Predicted Shape Score
-```
+### Phase 2 / Batch 4
 
-衡量预测结果经过 Merge 后保留多少 src 几何。
+- Source Shape Template；
+- Schema / Fingerprint；
+- Lifecycle 和 Fallback。
 
-同时观察：
+### Phase 3 / Batch 5
 
-- Identity Score
-- Expression Score
-- Video Stability Score
+- Hybrid Landmark；
+- `source_shape_power`；
+- Piecewise Affine Warp；
+- Confidence Gate。
+
+### Phase 4 / Batch 6
+
+- Shape-aware Soft Mask；
+- Occlusion Fallback；
+- Temporal Stabilization。
+
+### Phase 5 / Batch 7
+
+- Identity Appearance；
+- Region；
+- Boundary；
+- Frequency；
+- Full Curriculum。
+
+### Phase 6 / Batch 8
+
+- A/B；
+- 参数默认值；
+- 性能、兼容和文档；
+- GUI 接入。
 
 ---
 
-# 14. 最终目标
+## 15. 验收指标
 
-最终增强版 DFL：
+### 训练侧
 
+- Geometry 单项 Loss；
+- Shape Ratio Error；
+- Anchor confidence；
+- Identity Similarity；
+- dst Pose / Expression 保持；
+- 保存恢复；
+- 性能和显存。
+
+### Geometry Bridge
+
+- Template Schema / Identity / Fingerprint；
+- Template 重建等价性；
+- 缺失和损坏回退。
+
+### Merge 侧
+
+- Shape Retention Ratio；
+- Landmark topology；
+- Warp invalid rate；
+- Boundary Quality；
+- Occlusion handling；
+- Temporal Stability；
+- `source_shape_power = 0` 基线等价性。
+
+### 人工验收
+
+- src 身份；
+- src 脸型；
+- dst 表情和姿态；
+- 拉伸、错位、空洞；
+- 边缘；
+- 遮挡；
+- 视频闪烁。
+
+---
+
+## 16. 消融矩阵
+
+```text
+A：Baseline
+B：A + Batch 2 Sampling
+C：B + Geometry Training
+D：C + Shape Template
+E：D + Hybrid Landmark / Warp
+F：E + Shape Mask
+G：F + Temporal
+H：G + Appearance Loss
+I：H + Region / Boundary / Frequency（逐项）
 ```
+
+禁止直接从 A 跳到 I 后只比较最终效果，否则无法判断各模块收益和副作用。
+
+---
+
+## 17. 最终目标
+
+```text
 Source
- |
-Identity Appearance
-Identity Geometry
- |
+  ├── Identity Appearance
+  └── Identity Geometry
 
 Destination
- |
-Pose
-Expression
-Motion
- |
+  ├── Pose
+  ├── Expression
+  ├── Lighting
+  ├── Occlusion
+  └── Motion
 
-Enhanced Merge
- |
-
+Geometry-aware Training and Merge
+  ↓
 Natural Face Replacement
 ```
 
-目标不是简单换五官，而是实现：
+目标不是简单换五官，而是：
 
-> src 的身份和脸型 + dst 的运动表现。
+> src 的身份和稳定脸型 + dst 的姿态、表情和运动表现。
 
 同时保持：
 
 - 原模型兼容；
 - 原训练流程可用；
-- 原 Merge 可回退。
+- 原 Merge 可回退；
+- 新模块可独立启停；
+- 失败原因可定位。

@@ -116,7 +116,20 @@ def analyze_sample_task(task: dict) -> dict:
             byte_size = len(raw)
         quick_hash = compute_quick_hash(raw, chunk_size=chunk_size)
         if mode == SIGNATURE_MODE_STRONG:
-            content_sha256 = compute_content_sha256(raw)
+            try:
+                content_sha256 = compute_content_sha256(raw)
+            except Exception as e:
+                sample_issues.append(f"STRONG_HASH_ERROR_{type(e).__name__}")
+                content_sha256 = None
+
+    # Strong mode must not emit half-complete "signed" records.
+    if mode == SIGNATURE_MODE_STRONG and not content_sha256:
+        if raw is None:
+            sample_issues.append("STRONG_SIGNATURE_INCOMPLETE_NO_RAW")
+        elif "STRONG_HASH_ERROR" not in "".join(sample_issues):
+            sample_issues.append("STRONG_SIGNATURE_INCOMPLETE")
+        # Force image path invalid so the record cannot be treated as usable signed data.
+        sample_issues.append("STRONG_SIGNATURE_UNTRUSTED")
 
     sig = SampleSignature(
         sample_key=sample_key,

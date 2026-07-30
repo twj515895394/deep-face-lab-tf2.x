@@ -126,6 +126,7 @@ class RuntimeMetadata:
     id_matched_count: int = 0
     signature_matched_count: int = 0
     stale_signature_count: int = 0
+    unsigned_signature_count: int = 0
     missing_record_count: int = 0
     duplicate_count: int = 0
     trusted_matched_count: int = 0
@@ -312,6 +313,7 @@ class FacesetMetadataLoader:
         id_matched_count = 0
         signature_matched_count = 0
         stale_signature_count = 0
+        unsigned_signature_count = 0
         missing_record_count = 0
         trusted_matched_count = 0
         current_sig_objects = []
@@ -347,23 +349,20 @@ class FacesetMetadataLoader:
             record_matched[i] = True
 
             saved_sig = rec.get("signature") if isinstance(rec, dict) else None
-            if saved_sig is None:
-                # Legacy sidecar without per-sample signature: keep diagnostic mapping,
-                # but do not claim a cryptographic signature match.
-                sig_ok = True
-                legacy_unsigned = True
-            else:
-                legacy_unsigned = False
-                sig_ok = signatures_match(saved_sig, sig, mode=signature_mode)
+            # Ticket 17 fixed trust contract: sample_id + signature match.
+            # Unsigned legacy records may map by id for diagnostics, but must NOT
+            # be trusted and must NOT load old pose/quality business arrays.
+            if not isinstance(saved_sig, dict):
+                unsigned_signature_count += 1
+                continue
 
+            sig_ok = signatures_match(saved_sig, sig, mode=signature_mode)
             if not sig_ok:
                 # Same-name / same-id replacement: never trust old quality/pose.
                 stale_signature_count += 1
                 continue
 
-            if not legacy_unsigned:
-                signature_matched_count += 1
-            # Trusted for sampling when id matches and signature is OK (or legacy unsigned).
+            signature_matched_count += 1
             trusted_matched_count += 1
 
             # Independent child flags first (R5-01): a malformed sibling must not
@@ -461,10 +460,16 @@ class FacesetMetadataLoader:
                 warnings,
                 f"UNKNOWN_PITCH_BUCKET count={unknown_pitch_count} examples=[{', '.join(unknown_pitch_examples)}]",
             )
+        if unsigned_signature_count > 0:
+            _append_bounded_warning(
+                warnings,
+                f"UNSIGNED_SIGNATURE count={unsigned_signature_count}; "
+                f"id-matched records without signature are not trusted — re-analyze required.",
+            )
 
         # matched_count semantics: trusted matches only (id + signature).
         matched_count = trusted_matched_count
-        matched_ratio = matched_count / float(N)
+        matched_ratio = matched_count / float(N) if N > 0 else 0.0
         current_fingerprint = build_dataset_fingerprint(current_sig_objects)
         saved_fingerprint = loaded_meta.dataset.get("fingerprint")
 
@@ -513,6 +518,7 @@ class FacesetMetadataLoader:
             id_matched_count=id_matched_count,
             signature_matched_count=signature_matched_count,
             stale_signature_count=stale_signature_count,
+            unsigned_signature_count=unsigned_signature_count,
             missing_record_count=missing_record_count,
             duplicate_count=duplicate_collision_count,
             trusted_matched_count=trusted_matched_count,

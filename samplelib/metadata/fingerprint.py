@@ -51,10 +51,32 @@ def compute_quick_hash(raw_bytes: bytes, chunk_size: int = DEFAULT_QUICK_CHUNK_S
     n = len(raw_bytes)
     first = raw_bytes[:chunk_size]
     last = raw_bytes[-chunk_size:] if n > chunk_size else raw_bytes
+    return compute_quick_hash_chunks(first, last, n, chunk_size=chunk_size)
+
+
+def compute_quick_hash_chunks(
+    first_chunk: bytes,
+    last_chunk: bytes,
+    total_size: int,
+    chunk_size: int = DEFAULT_QUICK_CHUNK_SIZE,
+) -> str:
+    """Quick hash from already-bounded first/last chunks (no full-file requirement)."""
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be > 0")
+    if total_size < 0:
+        raise ValueError("total_size must be >= 0")
+    if total_size > chunk_size:
+        first = first_chunk[:chunk_size]
+        last = last_chunk[-chunk_size:] if len(last_chunk) > chunk_size else last_chunk
+    else:
+        # Entire payload fits in one chunk; first/last must both be that payload.
+        body = first_chunk[:total_size]
+        first = body
+        last = body
     hasher = hashlib.sha256()
     hasher.update(first)
     hasher.update(last)
-    hasher.update(str(n).encode("ascii"))
+    hasher.update(str(int(total_size)).encode("ascii"))
     return hasher.hexdigest()
 
 
@@ -84,6 +106,69 @@ def read_sample_raw_bytes(sample: Any, samples_path: Optional[Union[str, Path]] 
         raise FileNotFoundError(f"Ordinary sample file not found: {path}")
     with open(p, "rb") as f:
         return f.read()
+
+
+def _resolve_ordinary_path(sample: Any, samples_path: Optional[Union[str, Path]] = None) -> Path:
+    path = getattr(sample, "filename", None)
+    if path is None:
+        raise FileNotFoundError("Sample has no filename for raw byte read")
+    p = Path(path)
+    if not p.is_file() and samples_path is not None:
+        candidate = Path(samples_path) / path
+        if candidate.is_file():
+            p = candidate
+    if not p.is_file():
+        raise FileNotFoundError(f"Ordinary sample file not found: {path}")
+    return p
+
+
+def read_sample_bounded_chunks(
+    sample: Any,
+    samples_path: Optional[Union[str, Path]] = None,
+    chunk_size: int = DEFAULT_QUICK_CHUNK_SIZE,
+) -> tuple:
+    """
+    Bounded I/O for quick signatures: seek/read first+last chunk only.
+
+    Returns (first_chunk, last_chunk, total_size).
+    Ordinary files use Path seek; packed samples use known offset/size.
+    """
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be > 0")
+
+    off_size = getattr(sample, "_filename_offset_size", None)
+    if off_size is not None:
+        packed_path, packed_offset, packed_size = off_size
+        declared_size = int(packed_size)
+        offset = int(packed_offset)
+        with open(packed_path, "rb") as f:
+            f.seek(0, 2)
+            file_end = int(f.tell())
+            # Match Sample.read_raw_file short-read behavior at EOF so quick_hash
+            # embeds the same size as compute_quick_hash(full_bytes).
+            available = max(0, min(declared_size, file_end - offset))
+            total_size = int(available)
+            f.seek(offset)
+            first = f.read(min(chunk_size, total_size)) if total_size > 0 else b""
+            if total_size > chunk_size:
+                f.seek(offset + total_size - chunk_size)
+                last = f.read(chunk_size)
+            else:
+                last = first
+        return first, last, total_size
+
+    p = _resolve_ordinary_path(sample, samples_path=samples_path)
+    with open(p, "rb") as f:
+        f.seek(0, 2)
+        total_size = int(f.tell())
+        f.seek(0)
+        first = f.read(min(chunk_size, total_size)) if total_size > 0 else b""
+        if total_size > chunk_size:
+            f.seek(total_size - chunk_size)
+            last = f.read(chunk_size)
+        else:
+            last = first
+    return first, last, total_size
 
 
 def build_sample_signature(
@@ -146,22 +231,40 @@ def build_signature_from_sample(
             byte_size = 0
             mtime_ns = None
 
-    data = raw_bytes
-    if data is None and (mode == SIGNATURE_MODE_STRONG or True):
-        # Always attempt quick_hash when bytes can be read; strong requires full hash.
-        try:
-            data = read_sample_raw_bytes(sample, samples_path=samples_path)
-        except Exception:
-            data = None
-
     quick_hash = None
     content_sha256 = None
-    if data is not None:
-        if byte_size <= 0:
-            byte_size = len(data)
-        quick_hash = compute_quick_hash(data, chunk_size=chunk_size)
-        if mode == SIGNATURE_MODE_STRONG:
+    data = raw_bytes
+
+    if mode == SIGNATURE_MODE_STRONG:
+        # Strong: one full read only (caller may pass raw_bytes to avoid re-read).
+        if data is None:
+            try:
+                data = read_sample_raw_bytes(sample, samples_path=samples_path)
+            except Exception:
+                data = None
+        if data is not None:
+            if byte_size <= 0:
+                byte_size = len(data)
+            quick_hash = compute_quick_hash(data, chunk_size=chunk_size)
             content_sha256 = compute_content_sha256(data)
+    else:
+        # Quick: bounded first/last I/O; never require a full-file read.
+        if data is not None:
+            if byte_size <= 0:
+                byte_size = len(data)
+            quick_hash = compute_quick_hash(data, chunk_size=chunk_size)
+        else:
+            try:
+                first, last, total = read_sample_bounded_chunks(
+                    sample, samples_path=samples_path, chunk_size=chunk_size
+                )
+                if byte_size <= 0:
+                    byte_size = int(total)
+                quick_hash = compute_quick_hash_chunks(
+                    first, last, int(total), chunk_size=chunk_size
+                )
+            except Exception:
+                quick_hash = None
 
     return SampleSignature(
         sample_key=sample_key,

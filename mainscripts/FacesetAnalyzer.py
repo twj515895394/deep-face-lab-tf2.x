@@ -80,26 +80,13 @@ def main(
     has_person_name = any(getattr(s, "person_name", None) is not None for s in samples)
     faceset_format = "packed" if is_packed else ("person" if has_person_name else "ordinary")
 
-    # Extract current signatures under the active signature mode
-    current_signatures: Dict[str, dict] = {}
-    current_sig_objects = []
+    # Build sample_key map without reading image bytes (keys only).
     sample_key_map = {}
-
     for idx, s in enumerate(samples):
         person_name = getattr(s, "person_name", None)
         raw_filename = getattr(s, "filename", str(idx))
         key = build_sample_key(raw_filename, person_name=person_name, is_packed=is_packed, faceset_root=input_dir)
-        sig = build_signature_from_sample(
-            sample=s,
-            sample_key=key,
-            samples_path=input_dir,
-            mode=signature_mode,
-        )
-        current_signatures[key] = sig.to_dict()
-        current_sig_objects.append(sig)
         sample_key_map[key] = s
-
-    dataset_fingerprint = build_dataset_fingerprint(current_sig_objects)
 
     # Attempt loading old metadata if incremental is requested
     old_metadata: Optional[FacesetMetadataV1] = None
@@ -122,13 +109,37 @@ def main(
     )
     analyzer = FacesetAnalyzer(config=analyzer_config)
 
-    plan = build_incremental_plan(
-        old_metadata,
-        current_signatures,
-        analyzer_version=analyzer_config.analyzer_version,
-        force=force,
-        current_signature_mode=signature_mode,
-    )
+    # Signature scan only when incremental reuse is possible. Full/force runs must
+    # not pre-read every sample in the main process (workers already hash once).
+    current_signatures: Dict[str, dict] = {}
+    need_signature_scan = bool(old_metadata is not None and incremental and not force)
+    if need_signature_scan:
+        for key, s in sample_key_map.items():
+            sig = build_signature_from_sample(
+                sample=s,
+                sample_key=key,
+                samples_path=input_dir,
+                mode=signature_mode,
+            )
+            current_signatures[key] = sig.to_dict()
+        plan = build_incremental_plan(
+            old_metadata,
+            current_signatures,
+            analyzer_version=analyzer_config.analyzer_version,
+            force=force,
+            current_signature_mode=signature_mode,
+        )
+    else:
+        from samplelib.metadata.incremental import IncrementalPlan
+
+        reason = "FORCED_FULL_ANALYSIS" if force else (
+            "NO_PREVIOUS_METADATA" if old_metadata is None else "FULL_ANALYSIS"
+        )
+        plan = IncrementalPlan(
+            is_incremental=False,
+            added_sample_keys=list(sample_key_map.keys()),
+            reasons=[reason],
+        )
 
     reused_count = len(plan.reused_sample_keys)
     recomputed_count = len(plan.recompute_sample_keys)
@@ -171,7 +182,7 @@ def main(
                 sig_d = rec.get("signature") if isinstance(rec, dict) else None
                 if isinstance(sig_d, dict):
                     final_sigs.append(SampleSignature.from_dict(sig_d))
-            dataset_fingerprint = build_dataset_fingerprint(final_sigs) if final_sigs else dataset_fingerprint
+            dataset_fingerprint = build_dataset_fingerprint(final_sigs) if final_sigs else ""
 
             dataset_meta = {
                 "format": faceset_format,
@@ -179,12 +190,17 @@ def main(
                 "sample_count": len(final_samples),
             }
 
+            from samplelib.metadata.contracts import PITCH_BUCKET_NAMES, YAW_BUCKET_NAMES
+
             final_metadata = FacesetMetadataV1(
                 schema_version=1,
                 analyzer_version=analyzer_config.analyzer_version,
                 dataset=dataset_meta,
                 analysis_config={
                     "pose": {
+                        "bucket_contract_version": 1,
+                        "canonical_yaw_buckets": list(YAW_BUCKET_NAMES),
+                        "canonical_pitch_buckets": list(PITCH_BUCKET_NAMES),
                         "yaw_thresholds": list(analyzer_config.pose_config.yaw_thresholds),
                         "pitch_thresholds": list(analyzer_config.pose_config.pitch_thresholds),
                     },
@@ -209,18 +225,8 @@ def main(
 
     elapsed_time = time.time() - t_start
 
-    # Atomic Write to Disk — only after all workers complete successfully
-    try:
-        write_metadata_atomic(output_file, final_metadata, keep_backup=True)
-        io.log_info(f"[FacesetAnalyzer] Successfully saved atomic metadata to: {output_file}")
-    except MetadataStoreError as e:
-        io.log_err(f"[FacesetAnalyzer] Atomic metadata write failed: {e}")
-        return 6
-    except Exception as e:
-        io.log_err(f"[FacesetAnalyzer] Unexpected write error: {e}")
-        return 6
-
-    # Generate and Print Report
+    # Generate report before any formal Sidecar write so strict failures keep
+    # the previous Metadata bytes intact.
     report = generate_analyzer_report(
         metadata=final_metadata,
         dataset_path=input_dir,
@@ -241,8 +247,23 @@ def main(
     except Exception as e:
         io.log_err(f"[FacesetAnalyzer] Failed to save report JSON: {e}")
 
-    if strict and report.invalid_samples > 0:
-        io.log_err(f"[FacesetAnalyzer] Strict mode enabled and {report.invalid_samples} invalid samples found!")
+    invalid_count = int((final_metadata.summary or {}).get("invalid_samples", report.invalid_samples) or 0)
+    if strict and invalid_count > 0:
+        io.log_err(
+            f"[FacesetAnalyzer] Strict mode enabled and {invalid_count} invalid samples found; "
+            f"refusing to overwrite formal Sidecar: {output_file}"
+        )
         return 5
+
+    # Atomic Write to Disk — only after analysis + strict gate succeed
+    try:
+        write_metadata_atomic(output_file, final_metadata, keep_backup=True)
+        io.log_info(f"[FacesetAnalyzer] Successfully saved atomic metadata to: {output_file}")
+    except MetadataStoreError as e:
+        io.log_err(f"[FacesetAnalyzer] Atomic metadata write failed: {e}")
+        return 6
+    except Exception as e:
+        io.log_err(f"[FacesetAnalyzer] Unexpected write error: {e}")
+        return 6
 
     return 0

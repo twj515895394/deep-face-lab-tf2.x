@@ -16,6 +16,8 @@ from samplelib.metadata.fingerprint import (
     build_signature_from_sample,
     compute_content_sha256,
     compute_quick_hash,
+    compute_quick_hash_chunks,
+    read_sample_bounded_chunks,
     signatures_match,
 )
 from tests.fixtures.batch2.build_synthetic_fixture import build_ordinary_fixture, build_packed_fixture
@@ -130,6 +132,23 @@ class TestBatch2FingerprintStrong(unittest.TestCase):
         fp1 = build_dataset_fingerprint([a, b])
         fp2 = build_dataset_fingerprint([b, a])
         self.assertEqual(fp1, fp2)
+
+    def test_quick_bounded_chunks_match_full_bytes_hash(self):
+        sample, _ = self._first_sample(self.ordinary_dir)
+        from samplelib.metadata.identity import build_sample_key
+        from samplelib.metadata.fingerprint import read_sample_raw_bytes
+
+        key = build_sample_key(sample.filename, is_packed=False, faceset_root=self.ordinary_dir)
+        full = read_sample_raw_bytes(sample, samples_path=self.ordinary_dir)
+        first, last, total = read_sample_bounded_chunks(sample, samples_path=self.ordinary_dir)
+        self.assertEqual(total, len(full))
+        self.assertEqual(
+            compute_quick_hash_chunks(first, last, total),
+            compute_quick_hash(full),
+        )
+        sig = build_signature_from_sample(sample, key, self.ordinary_dir, mode=SIGNATURE_MODE_QUICK)
+        self.assertEqual(sig.quick_hash, compute_quick_hash(full))
+        self.assertIsNone(sig.content_sha256)
 
 
 if __name__ == "__main__":

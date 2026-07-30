@@ -1,8 +1,10 @@
+import hashlib
 import json
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from mainscripts import FacesetAnalyzer
 from samplelib.metadata.store import load_metadata
@@ -99,6 +101,93 @@ class TestFacesetAnalyzerCLI(unittest.TestCase):
 
         self.assertEqual(report_data["faceset_format"], "packed")
         self.assertEqual(report_data["total_samples"], 10)
+
+    def test_strict_invalid_keeps_existing_sidecar_bytes(self):
+        """strict invalid must not overwrite the formal Sidecar (T17-R1-02)."""
+        work = self.temp_dir / "strict_keep"
+        if work.exists():
+            shutil.rmtree(work, ignore_errors=True)
+        build_ordinary_fixture(work)
+        meta_file = work / "faceset_metadata.v1.json"
+        report_file = work / "faceset_metadata_report.v1.json"
+
+        ret0 = FacesetAnalyzer.main(
+            input_dir=work,
+            output_file=meta_file,
+            report_file=report_file,
+            incremental=False,
+            force=True,
+        )
+        self.assertEqual(ret0, 0)
+        self.assertTrue(meta_file.exists())
+        old_bytes = meta_file.read_bytes()
+        old_sha = hashlib.sha256(old_bytes).hexdigest()
+
+        from samplelib.metadata.analyzer import FacesetAnalyzer as AnalyzerCls
+
+        real_analyze = AnalyzerCls.analyze_samples
+
+        def _inject_invalid(self, samples, samples_path):
+            res = real_analyze(self, samples, samples_path)
+            summary = dict(res.metadata.summary or {})
+            summary["invalid_samples"] = max(1, int(summary.get("invalid_samples", 0)) + 1)
+            res.metadata.summary = summary
+            if res.metadata.samples:
+                sample0 = dict(res.metadata.samples[0])
+                issues = list(sample0.get("issues") or [])
+                issues.append("INJECTED_STRICT_INVALID")
+                sample0["issues"] = issues
+                res.metadata.samples = [sample0] + list(res.metadata.samples[1:])
+            return res
+
+        with mock.patch.object(AnalyzerCls, "analyze_samples", _inject_invalid):
+            ret = FacesetAnalyzer.main(
+                input_dir=work,
+                output_file=meta_file,
+                report_file=report_file,
+                incremental=False,
+                force=True,
+                strict=True,
+            )
+
+        self.assertEqual(ret, 5)
+        self.assertEqual(hashlib.sha256(meta_file.read_bytes()).hexdigest(), old_sha)
+        self.assertEqual(meta_file.read_bytes(), old_bytes)
+
+    def test_incremental_preserves_canonical_pose_contract(self):
+        work = self.temp_dir / "incr_canonical"
+        if work.exists():
+            shutil.rmtree(work, ignore_errors=True)
+        build_ordinary_fixture(work)
+        meta_file = work / "faceset_metadata.v1.json"
+        report_file = work / "faceset_metadata_report.v1.json"
+
+        self.assertEqual(
+            FacesetAnalyzer.main(
+                input_dir=work,
+                output_file=meta_file,
+                report_file=report_file,
+                incremental=False,
+                force=True,
+            ),
+            0,
+        )
+        self.assertEqual(
+            FacesetAnalyzer.main(
+                input_dir=work,
+                output_file=meta_file,
+                report_file=report_file,
+                incremental=True,
+            ),
+            0,
+        )
+        loaded, val = load_metadata(meta_file)
+        self.assertTrue(val.is_valid)
+        pose_cfg = (loaded.analysis_config or {}).get("pose") or {}
+        self.assertEqual(pose_cfg.get("bucket_contract_version"), 1)
+        self.assertIn("canonical_yaw_buckets", pose_cfg)
+        self.assertIn("canonical_pitch_buckets", pose_cfg)
+        self.assertGreaterEqual(len(pose_cfg.get("canonical_yaw_buckets") or []), 1)
 
 
 if __name__ == "__main__":

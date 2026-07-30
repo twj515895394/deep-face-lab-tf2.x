@@ -44,6 +44,55 @@ class TestBatch2MetadataLoader(unittest.TestCase):
         if cls.temp_dir.exists():
             shutil.rmtree(cls.temp_dir)
 
+    def _with_matching_signatures(self, raw, samples, samples_path, is_packed=False):
+        """Ticket 17: attach live-matching signatures so tests can exercise business arrays."""
+        from samplelib.metadata.fingerprint import (
+            SIGNATURE_MODE_QUICK,
+            build_signature_from_sample,
+            signature_config_dict,
+        )
+        from samplelib.metadata.identity import build_sample_id, build_sample_key
+
+        by_id = {}
+        for s in samples:
+            key = build_sample_key(
+                getattr(s, "filename"),
+                person_name=getattr(s, "person_name", None),
+                is_packed=is_packed,
+                faceset_root=samples_path,
+            )
+            by_id[build_sample_id(key)] = (s, key)
+
+        out = dict(raw)
+        new_samples = []
+        for rec in list(raw.get("samples") or []):
+            if not isinstance(rec, dict):
+                new_samples.append(rec)
+                continue
+            sid = rec.get("sample_id")
+            pair = by_id.get(sid)
+            if pair is None:
+                new_samples.append(rec)
+                continue
+            sample, key = pair
+            r = dict(rec)
+            r["sample_key"] = key
+            r["signature"] = build_signature_from_sample(
+                sample, key, samples_path, mode=SIGNATURE_MODE_QUICK
+            ).to_dict()
+            new_samples.append(r)
+        out["samples"] = new_samples
+        analysis_config = dict(out.get("analysis_config") or {})
+        analysis_config["signature"] = signature_config_dict(SIGNATURE_MODE_QUICK)
+        out["analysis_config"] = analysis_config
+        return out
+
+    def _dump_signed_meta(self, path, raw, samples, samples_path, is_packed=False):
+        payload = self._with_matching_signatures(raw, samples, samples_path, is_packed=is_packed)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+        return payload
+
     def test_loader_perfect_match(self):
         from samplelib import SampleLoader, SampleType
 
@@ -292,8 +341,7 @@ class TestBatch2MetadataLoader(unittest.TestCase):
             ],
         }
         path = self.temp_dir / "extreme_yaw.v1.json"
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(raw, f)
+        self._dump_signed_meta(path, raw, samples, self.ordinary_dir)
 
         runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
         self.assertEqual(runtime.yaw_bucket_ids[0], UNKNOWN_BUCKET_ID)
@@ -326,8 +374,7 @@ class TestBatch2MetadataLoader(unittest.TestCase):
             "samples": meta_samples,
         }
 
-        with open(alias_meta_path, "w", encoding="utf-8") as f:
-            json.dump(alias_raw, f)
+        self._dump_signed_meta(alias_meta_path, alias_raw, samples, self.ordinary_dir)
 
         runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=alias_meta_path)
 
@@ -366,8 +413,7 @@ class TestBatch2MetadataLoader(unittest.TestCase):
             ],
         }
 
-        with open(pitch_meta_path, "w", encoding="utf-8") as f:
-            json.dump(pitch_raw, f)
+        self._dump_signed_meta(pitch_meta_path, pitch_raw, samples, self.ordinary_dir)
 
         runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=pitch_meta_path)
         self.assertTrue(runtime.pose_valid[0])
@@ -548,8 +594,7 @@ class TestBatch2MetadataLoader(unittest.TestCase):
             }],
         }
         path = self.temp_dir / "sem_sep.v1.json"
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(raw, f)
+        self._dump_signed_meta(path, raw, samples, self.ordinary_dir)
 
         runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
         self.assertTrue(runtime.record_matched[0])
@@ -587,8 +632,7 @@ class TestBatch2MetadataLoader(unittest.TestCase):
             ],
         }
         path = self.temp_dir / "matched_vs_malformed.v1.json"
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(raw, f)
+        self._dump_signed_meta(path, raw, samples, self.ordinary_dir)
 
         runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
         self.assertTrue(runtime.record_matched[0])
@@ -618,8 +662,7 @@ class TestBatch2MetadataLoader(unittest.TestCase):
             }],
         }
         path = self.temp_dir / "image_valid_nested.v1.json"
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(raw, f)
+        self._dump_signed_meta(path, raw, samples, self.ordinary_dir)
 
         runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
         self.assertTrue(runtime.metadata_valid[0])
@@ -645,8 +688,7 @@ class TestBatch2MetadataLoader(unittest.TestCase):
             }],
         }
         path = self.temp_dir / "landmarks_valid_nested.v1.json"
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(raw, f)
+        self._dump_signed_meta(path, raw, samples, self.ordinary_dir)
 
         runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
         self.assertTrue(runtime.metadata_valid[0])
@@ -695,8 +737,12 @@ class TestBatch2MetadataLoader(unittest.TestCase):
             },
         ]
         path = self.temp_dir / "independent_flags.v1.json"
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"schema_version": 1, "dataset": {}, "samples": recs}, f)
+        self._dump_signed_meta(
+            path,
+            {"schema_version": 1, "dataset": {}, "samples": recs},
+            samples,
+            self.ordinary_dir,
+        )
 
         runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
         self.assertTrue(np.all(runtime.record_matched[:4]))
@@ -749,8 +795,7 @@ class TestBatch2MetadataLoader(unittest.TestCase):
             }],
         }
         path = self.temp_dir / "malformed_sibling_independent.v1.json"
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(raw, f)
+        self._dump_signed_meta(path, raw, samples, self.ordinary_dir)
 
         runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=path)
 

@@ -79,6 +79,42 @@ class TestBatch2TrustedMatchStale(unittest.TestCase):
         finally:
             target.write_bytes(original)
 
+    def test_unsigned_legacy_record_not_trusted(self):
+        """ID hit without signature: record_matched, not trusted, no pose/quality load."""
+        from samplelib import SampleLoader, SampleType
+        from samplelib.metadata.schema import FacesetMetadataV1
+
+        analyzer = FacesetAnalyzer(FacesetAnalyzerConfig(workers=1, strong_fingerprint=False))
+        res = analyzer.analyze(self.ordinary_dir)
+        # Strip all per-sample signatures to simulate legacy unsigned sidecar.
+        unsigned_samples = []
+        for rec in res.metadata.samples:
+            r = dict(rec)
+            r.pop("signature", None)
+            unsigned_samples.append(r)
+        meta = FacesetMetadataV1(
+            schema_version=res.metadata.schema_version,
+            analyzer_version=res.metadata.analyzer_version,
+            dataset=dict(res.metadata.dataset or {}),
+            analysis_config=dict(res.metadata.analysis_config or {}),
+            summary=dict(res.metadata.summary or {}),
+            samples=unsigned_samples,
+        )
+        meta_path = self.ordinary_dir / "faceset_metadata.v1.json"
+        meta.dump_json(meta_path)
+
+        samples = SampleLoader.load(SampleType.FACE, self.ordinary_dir)
+        runtime = FacesetMetadataLoader.load(self.ordinary_dir, samples, metadata_path=meta_path)
+
+        self.assertGreaterEqual(runtime.id_matched_count, 1)
+        self.assertTrue(np.any(runtime.record_matched))
+        self.assertEqual(runtime.trusted_matched_count, 0)
+        self.assertEqual(runtime.signature_matched_count, 0)
+        self.assertGreaterEqual(runtime.unsigned_signature_count, 1)
+        self.assertFalse(np.any(runtime.pose_valid))
+        self.assertFalse(np.any(runtime.quality_valid))
+        self.assertTrue(any("UNSIGNED_SIGNATURE" in w for w in runtime.warnings))
+
 
 if __name__ == "__main__":
     unittest.main()

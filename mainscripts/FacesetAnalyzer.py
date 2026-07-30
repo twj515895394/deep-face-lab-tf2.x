@@ -6,8 +6,15 @@ from typing import Dict, Optional
 
 from core.interact import interact as io
 from samplelib import SampleLoader, SampleType
-from samplelib.metadata.analyzer import AnalyzerResult, FacesetAnalyzer, FacesetAnalyzerConfig
-from samplelib.metadata.fingerprint import build_dataset_fingerprint, build_sample_signature
+from samplelib.metadata.analyzer import AnalyzerResult, FacesetAnalyzer, FacesetAnalyzerConfig, resolve_worker_count
+from samplelib.metadata.fingerprint import (
+    SIGNATURE_MODE_QUICK,
+    SIGNATURE_MODE_STRONG,
+    build_dataset_fingerprint,
+    build_signature_from_sample,
+    signature_config_dict,
+    signature_mode_from_analysis_config,
+)
 from samplelib.metadata.identity import build_sample_id, build_sample_key
 from samplelib.metadata.incremental import build_incremental_plan, reconcile_and_finalize_samples
 from samplelib.metadata.report import generate_analyzer_report, print_console_summary, save_report_json
@@ -42,9 +49,21 @@ def main(
     else:
         report_file = Path(report_file).resolve()
 
+    try:
+        worker_count = resolve_worker_count(workers)
+    except ValueError as e:
+        io.log_err(f"[FacesetAnalyzer] Invalid --workers: {e}")
+        return 2
+
+    signature_mode = SIGNATURE_MODE_STRONG if strong_fingerprint else SIGNATURE_MODE_QUICK
+
     io.log_info(f"[FacesetAnalyzer] Starting faceset analysis for: {input_dir}")
     io.log_info(f"[FacesetAnalyzer] Target metadata file : {output_file}")
     io.log_info(f"[FacesetAnalyzer] Target report file   : {report_file}")
+    io.log_info(
+        f"[FacesetAnalyzer] workers requested={workers} used={worker_count} "
+        f"signature_mode={signature_mode}"
+    )
 
     # Check faceset format and load samples
     try:
@@ -61,8 +80,8 @@ def main(
     has_person_name = any(getattr(s, "person_name", None) is not None for s in samples)
     faceset_format = "packed" if is_packed else ("person" if has_person_name else "ordinary")
 
-    # Extract current signatures
-    current_signatures: Dict[str, str] = {}
+    # Extract current signatures under the active signature mode
+    current_signatures: Dict[str, dict] = {}
     current_sig_objects = []
     sample_key_map = {}
 
@@ -70,19 +89,12 @@ def main(
         person_name = getattr(s, "person_name", None)
         raw_filename = getattr(s, "filename", str(idx))
         key = build_sample_key(raw_filename, person_name=person_name, is_packed=is_packed, faceset_root=input_dir)
-
-        off_size = getattr(s, "_filename_offset_size", None)
-        if off_size is not None:
-            _, offset, size = off_size
-            sig = build_sample_signature(key, byte_size=size, packed_offset=offset)
-        else:
-            abs_fp = input_dir / key if not Path(key).is_absolute() else Path(key)
-            if abs_fp.exists():
-                stat = abs_fp.stat()
-                sig = build_sample_signature(key, byte_size=stat.st_size, mtime_ns=stat.st_mtime_ns)
-            else:
-                sig = build_sample_signature(key, byte_size=0)
-
+        sig = build_signature_from_sample(
+            sample=s,
+            sample_key=key,
+            samples_path=input_dir,
+            mode=signature_mode,
+        )
         current_signatures[key] = sig.to_dict()
         current_sig_objects.append(sig)
         sample_key_map[key] = s
@@ -95,11 +107,28 @@ def main(
         loaded, val_res = load_metadata(output_file)
         if val_res.is_supported and val_res.is_valid:
             old_metadata = loaded
-            io.log_info(f"[FacesetAnalyzer] Loaded existing metadata from {output_file} for incremental processing.")
+            old_mode = signature_mode_from_analysis_config(getattr(old_metadata, "analysis_config", None))
+            io.log_info(
+                f"[FacesetAnalyzer] Loaded existing metadata from {output_file} "
+                f"for incremental processing (old_signature_mode={old_mode})."
+            )
         else:
             io.log_info(f"[FacesetAnalyzer] Existing metadata invalid or unsupported, fallback to full analysis.")
 
-    plan = build_incremental_plan(old_metadata, current_signatures, force=force)
+    analyzer_config = FacesetAnalyzerConfig(
+        strict=strict,
+        workers=workers,
+        strong_fingerprint=strong_fingerprint,
+    )
+    analyzer = FacesetAnalyzer(config=analyzer_config)
+
+    plan = build_incremental_plan(
+        old_metadata,
+        current_signatures,
+        analyzer_version=analyzer_config.analyzer_version,
+        force=force,
+        current_signature_mode=signature_mode,
+    )
 
     reused_count = len(plan.reused_sample_keys)
     recomputed_count = len(plan.recompute_sample_keys)
@@ -108,123 +137,79 @@ def main(
 
     io.log_info(
         f"[FacesetAnalyzer] Incremental plan: Reused={reused_count}, "
-        f"Recomputed={recomputed_count}, Added={added_count}, Removed={removed_count}"
+        f"Recomputed={recomputed_count}, Added={added_count}, Removed={removed_count}, "
+        f"reasons={plan.reasons}"
     )
 
-    analyzer_config = FacesetAnalyzerConfig(strict=strict)
-    analyzer = FacesetAnalyzer(config=analyzer_config)
+    try:
+        if not plan.is_incremental or (recomputed_count + added_count == len(samples)):
+            io.log_info(f"[FacesetAnalyzer] Running full analysis with workers={worker_count}...")
+            res: AnalyzerResult = analyzer.analyze_samples(samples, input_dir)
+            final_metadata = res.metadata
+        else:
+            target_keys = list(plan.recompute_sample_keys + plan.added_sample_keys)
+            newly_analyzed_records = []
+            if len(target_keys) > 0:
+                io.log_info(
+                    f"[FacesetAnalyzer] Analyzing {len(target_keys)} new/modified samples "
+                    f"with workers={worker_count}..."
+                )
+                newly_analyzed_records = analyzer.analyze_sample_keys(
+                    samples_by_key=sample_key_map,
+                    sample_keys=target_keys,
+                    samples_path=input_dir,
+                    is_packed=is_packed,
+                )
 
-    if not plan.is_incremental or (recomputed_count + added_count == len(samples)):
-        # Run full analysis
-        io.log_info("[FacesetAnalyzer] Running full analysis...")
-        res: AnalyzerResult = analyzer.analyze(input_dir)
-        final_metadata = res.metadata
-    else:
-        # Run partial analysis only on added / recomputed samples
-        target_keys = set(plan.recompute_sample_keys + plan.added_sample_keys)
-        newly_analyzed_records = []
+            final_samples, summary = reconcile_and_finalize_samples(plan, newly_analyzed_records)
 
-        if len(target_keys) > 0:
-            io.log_info(f"[FacesetAnalyzer] Analyzing {len(target_keys)} new/modified samples...")
-            # For simplicity & correctness, extract raw metrics for target_keys
-            for key in target_keys:
-                sample = sample_key_map[key]
-                sample_id = build_sample_id(key)
+            # Recompute fingerprint from final sample signatures
+            from samplelib.metadata.fingerprint import SampleSignature
 
-                # Signature
-                off_size = getattr(sample, "_filename_offset_size", None)
-                if off_size is not None:
-                    _, offset, size = off_size
-                    sig = build_sample_signature(key, byte_size=size, packed_offset=offset)
-                else:
-                    abs_fp = input_dir / key if not Path(key).is_absolute() else Path(key)
-                    if abs_fp.exists():
-                        stat = abs_fp.stat()
-                        sig = build_sample_signature(key, byte_size=stat.st_size, mtime_ns=stat.st_mtime_ns)
-                    else:
-                        sig = build_sample_signature(key, byte_size=0)
+            final_sigs = []
+            for rec in final_samples:
+                sig_d = rec.get("signature") if isinstance(rec, dict) else None
+                if isinstance(sig_d, dict):
+                    final_sigs.append(SampleSignature.from_dict(sig_d))
+            dataset_fingerprint = build_dataset_fingerprint(final_sigs) if final_sigs else dataset_fingerprint
 
-                bgr_img = None
-                issues = []
-                try:
-                    bgr_img = sample.load_bgr()
-                except Exception as e:
-                    issues.append(f"IMAGE_LOAD_ERROR_{type(e).__name__}")
+            dataset_meta = {
+                "format": faceset_format,
+                "fingerprint": dataset_fingerprint,
+                "sample_count": len(final_samples),
+            }
 
-                from samplelib.metadata.pose import analyze_pose
-                from samplelib.metadata.quality import compute_raw_quality, validate_image
-
-                img_val = validate_image(bgr_img)
-                if not img_val.valid:
-                    issues.extend(img_val.issues)
-
-                raw_q = compute_raw_quality(bgr_img, analyzer_config.quality_config) if img_val.valid else None
-                img_shape = bgr_img.shape if img_val.valid else getattr(sample, "shape", None)
-                pose_res = analyze_pose(getattr(sample, "landmarks", None), img_shape=img_shape, config=analyzer_config.pose_config)
-                if not pose_res.valid:
-                    issues.extend(pose_res.issues)
-
-                newly_analyzed_records.append({
-                    "sample_id": sample_id,
-                    "sample_key": key,
-                    "signature": sig.to_dict(),
-                    "image": {
-                        "valid": img_val.valid,
-                        "height": img_val.height,
-                        "width": img_val.width,
-                        "channels": img_val.channels,
-                    },
-                    "landmarks": {"valid": pose_res.valid},
+            final_metadata = FacesetMetadataV1(
+                schema_version=1,
+                analyzer_version=analyzer_config.analyzer_version,
+                dataset=dataset_meta,
+                analysis_config={
                     "pose": {
-                        "valid": pose_res.valid,
-                        "pitch": pose_res.pitch,
-                        "yaw": pose_res.yaw,
-                        "roll": pose_res.roll,
-                        "yaw_bucket": pose_res.yaw_bucket,
-                        "pitch_bucket": pose_res.pitch_bucket,
+                        "yaw_thresholds": list(analyzer_config.pose_config.yaw_thresholds),
+                        "pitch_thresholds": list(analyzer_config.pose_config.pitch_thresholds),
                     },
-                    "quality_raw": {
-                        "valid": raw_q.valid if raw_q else False,
-                        "sharpness_raw": raw_q.sharpness_raw if raw_q else None,
-                        "dark_ratio": raw_q.dark_ratio if raw_q else None,
-                        "bright_ratio": raw_q.bright_ratio if raw_q else None,
-                        "exposure_score": raw_q.exposure_score if raw_q else None,
+                    "quality": {
+                        "dark_threshold": analyzer_config.quality_config.dark_threshold,
+                        "bright_threshold": analyzer_config.quality_config.bright_threshold,
+                        "sharpness_weight": analyzer_config.quality_config.sharpness_weight,
+                        "exposure_weight": analyzer_config.quality_config.exposure_weight,
                     },
-                    "issues": issues,
-                })
-                del bgr_img
-
-        final_samples, summary = reconcile_and_finalize_samples(plan, newly_analyzed_records)
-
-        dataset_meta = {
-            "format": faceset_format,
-            "fingerprint": dataset_fingerprint,
-            "sample_count": len(final_samples),
-        }
-
-        final_metadata = FacesetMetadataV1(
-            schema_version=1,
-            analyzer_version=analyzer_config.analyzer_version,
-            dataset=dataset_meta,
-            analysis_config={
-                "pose": {
-                    "yaw_thresholds": list(analyzer_config.pose_config.yaw_thresholds),
-                    "pitch_thresholds": list(analyzer_config.pose_config.pitch_thresholds),
+                    "signature": signature_config_dict(signature_mode),
+                    "workers": {
+                        "requested": workers,
+                        "used": worker_count,
+                    },
                 },
-                "quality": {
-                    "dark_threshold": analyzer_config.quality_config.dark_threshold,
-                    "bright_threshold": analyzer_config.quality_config.bright_threshold,
-                    "sharpness_weight": analyzer_config.quality_config.sharpness_weight,
-                    "exposure_weight": analyzer_config.quality_config.exposure_weight,
-                },
-            },
-            summary=summary,
-            samples=final_samples,
-        )
+                summary=summary,
+                samples=final_samples,
+            )
+    except Exception as e:
+        io.log_err(f"[FacesetAnalyzer] Analysis failed: {type(e).__name__}: {e}")
+        return 4
 
     elapsed_time = time.time() - t_start
 
-    # Atomic Write to Disk
+    # Atomic Write to Disk — only after all workers complete successfully
     try:
         write_metadata_atomic(output_file, final_metadata, keep_backup=True)
         io.log_info(f"[FacesetAnalyzer] Successfully saved atomic metadata to: {output_file}")

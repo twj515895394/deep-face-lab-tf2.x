@@ -21,15 +21,17 @@ def build_incremental_plan(
     current_signatures: Dict[str, str],
     analyzer_version: str = "v1.0",
     force: bool = False,
+    current_signature_mode: str = "quick",
 ) -> IncrementalPlan:
     """
     Build an incremental plan by comparing existing metadata with current sample signatures.
 
     Args:
         old_metadata: Previous FacesetMetadataV1 instance (if any).
-        current_signatures: Mapping sample_key -> signature (MD5/sha256/mtime).
+        current_signatures: Mapping sample_key -> signature dict.
         analyzer_version: Current analyzer version string.
         force: If True, bypass incremental reuse and force full analysis.
+        current_signature_mode: "quick" or "strong" for this run.
 
     Returns:
         IncrementalPlan object describing reused, recomputed, added, and removed samples.
@@ -62,6 +64,33 @@ def build_incremental_plan(
             reasons=[f"ANALYZER_VERSION_CHANGED_{old_metadata.analyzer_version}_TO_{analyzer_version}"],
         )
 
+    from samplelib.metadata.fingerprint import (
+        SIGNATURE_MODE_QUICK,
+        SIGNATURE_MODE_STRONG,
+        signature_mode_from_analysis_config,
+        signatures_match,
+        SampleSignature,
+    )
+
+    old_mode = signature_mode_from_analysis_config(getattr(old_metadata, "analysis_config", None))
+    cur_mode = (current_signature_mode or SIGNATURE_MODE_QUICK).lower()
+
+    # strong -> quick: never degrade; force full recompute.
+    if old_mode == SIGNATURE_MODE_STRONG and cur_mode == SIGNATURE_MODE_QUICK:
+        return IncrementalPlan(
+            is_incremental=False,
+            added_sample_keys=list(current_signatures.keys()),
+            reasons=["SIGNATURE_MODE_DOWNGRADE_FORBIDDEN_STRONG_TO_QUICK"],
+        )
+
+    # quick -> strong: require re-sign / full recompute (safe default).
+    if old_mode == SIGNATURE_MODE_QUICK and cur_mode == SIGNATURE_MODE_STRONG:
+        return IncrementalPlan(
+            is_incremental=False,
+            added_sample_keys=list(current_signatures.keys()),
+            reasons=["SIGNATURE_MODE_UPGRADE_TO_STRONG_REQUIRES_RECOMPUTE"],
+        )
+
     old_dict = {s.get("sample_key"): s for s in old_metadata.samples if isinstance(s, dict) and "sample_key" in s}
 
     reused_keys = []
@@ -73,7 +102,18 @@ def build_incremental_plan(
         if key in old_dict:
             old_rec = old_dict[key]
             old_sig = old_rec.get("signature")
-            if old_sig and old_sig == current_sig:
+            # Prefer structured match so optional new hash fields compare correctly.
+            matched = False
+            if isinstance(current_sig, dict):
+                try:
+                    cur_obj = SampleSignature.from_dict(current_sig)
+                    matched = signatures_match(old_sig, cur_obj, mode=cur_mode)
+                except Exception:
+                    matched = bool(old_sig and old_sig == current_sig)
+            else:
+                matched = bool(old_sig and old_sig == current_sig)
+
+            if matched:
                 reused_keys.append(key)
                 reused_records[key] = old_rec
             else:
@@ -94,6 +134,7 @@ def build_incremental_plan(
             f"RECOMPUTE_{len(recompute_keys)}",
             f"ADDED_{len(added_keys)}",
             f"REMOVED_{len(removed_keys)}",
+            f"SIGNATURE_MODE_{cur_mode}",
         ],
         reused_sample_records=reused_records,
     )

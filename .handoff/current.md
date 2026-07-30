@@ -1,19 +1,19 @@
 # 当前项目交接入口
 
 > 本文件是新会话、新 Agent 和后续开发者的固定入口。  
-> 更新时间：2026-07-30（Ticket 16 实现完成，等待 Wave 1 集中 Review）  
-> 当前交接：Ticket 15 PASS/CLOSED；Ticket 16 实现完成（Windows spawn unit PASS，SAEHD GPU 训练仍 PENDING）  
-> 当前状态：`TICKET14-PASS / TICKET15-PASS-CLOSED / TICKET16-IMPL-COMPLETE-AWAITING-REVIEW / WAVE1-IN-PROGRESS`
+> 更新时间：2026-07-30（Ticket 16+17 实现完成，等待 Wave 1 集中 Review）  
+> 当前交接：Ticket 15 PASS/CLOSED；Ticket 16/17 实现完成；Ticket 19 仍 OPEN  
+> 当前状态：`TICKET14-PASS / TICKET15-PASS-CLOSED / TICKET16-IMPL-COMPLETE / TICKET17-IMPL-COMPLETE / WAVE1-IN-PROGRESS`
 
 ---
 
 ## 1. 最新必读入口
 
-1. [Ticket 16 实施 Summary](../.scratch/batch2-training-data-and-sampling/reports/16-fix-weighted-index-host-windows-spawn-summary.md)
-2. [Ticket 16 施工规约](../.scratch/batch2-training-data-and-sampling/issues/16-fix-weighted-index-host-windows-spawn.md)
-3. [Ticket 15 Round 2 Final Review — APPROVED / PASS](../.scratch/batch2-training-data-and-sampling/reports/15-fix-options-json-and-src-dst-sampling-contract-review-round2-final.md)
-4. [Ticket 15 实施 Summary](../.scratch/batch2-training-data-and-sampling/reports/15-fix-options-json-and-src-dst-sampling-contract-summary.md)
-5. [Ticket 17](../.scratch/batch2-training-data-and-sampling/issues/17-implement-analyzer-workers-strong-fingerprint-and-stale-detection.md)
+1. [Ticket 17 实施 Summary](../.scratch/batch2-training-data-and-sampling/reports/17-implement-analyzer-workers-strong-fingerprint-and-stale-detection-summary.md)
+2. [Ticket 16 实施 Summary](../.scratch/batch2-training-data-and-sampling/reports/16-fix-weighted-index-host-windows-spawn-summary.md)
+3. [Ticket 16 施工规约](../.scratch/batch2-training-data-and-sampling/issues/16-fix-weighted-index-host-windows-spawn.md)
+4. [Ticket 17 施工规约](../.scratch/batch2-training-data-and-sampling/issues/17-implement-analyzer-workers-strong-fingerprint-and-stale-detection.md)
+5. [Ticket 15 Round 2 Final Review — APPROVED / PASS](../.scratch/batch2-training-data-and-sampling/reports/15-fix-options-json-and-src-dst-sampling-contract-review-round2-final.md)
 6. [Ticket 19](../.scratch/batch2-training-data-and-sampling/issues/19-fix-loss-window-save-boundary-and-observability.md)
 7. [Ticket 18](../.scratch/batch2-training-data-and-sampling/issues/18-implement-incremental-summary-and-analyzer-cache.md)
 8. [Ticket 20](../.scratch/batch2-training-data-and-sampling/issues/20-close-sampleloader-production-contract.md)
@@ -31,18 +31,21 @@ Ticket 15 Review R2 Final：4fd7d062cc817589fd964efdae3bd3e793247b68
 Ticket 15 工作分支：       codex/batch2-ticket15-config-contract
 Ticket 16 工作分支：       codex/batch2-ticket16-windows-spawn
 Ticket 16 base：           0bb1fa094c3ddf0304eaf6cfcb9b11aac2eff400
-Ticket 16 impl commit：    (pending commit by operator)
+Ticket 16 impl commit：    f9f846ab255a97005890a4ed7b6d3740ee4119e8
+Ticket 17 工作分支：       codex/batch2-ticket17-analyzer-workers
+Ticket 17 base：           f9f846ab255a97005890a4ed7b6d3740ee4119e8
+Ticket 17 impl commit：    (see latest commit on branch)
 ```
 
 ```text
 Ticket 14：APPROVED / PASS / CLOSED
 Ticket 15：APPROVED / PASS / CONFIG CONTRACT CLOSED
 Ticket 16：IMPLEMENTATION COMPLETE / WINDOWS-SPAWN-UNIT-PASS / PENDING-SAEHD-GPU / AWAITING WAVE-1 REVIEW
+Ticket 17：IMPLEMENTATION COMPLETE / WORKERS+STRONG-FP+TRUSTED-MATCH / AWAITING WAVE-1 REVIEW
            （实现者不得签发 APPROVED/PASS/CLOSED）
-Ticket 17：UNBLOCKED / WAVE 1
-Ticket 19：UNBLOCKED / WAVE 1
-Ticket 18：BLOCKED-BY-17 / WAVE 2
-Ticket 20：BLOCKED-BY-16+17 / WAVE 2
+Ticket 19：UNBLOCKED / WAVE 1 / OPEN
+Ticket 18：PROVISIONAL-OK-AFTER-17-SHA / WAVE 2
+Ticket 20：PROVISIONAL-OK-AFTER-16+17-SHA / WAVE 2
 ```
 
 ---
@@ -241,14 +244,14 @@ GitHub Actions：无 workflow run / 无 CI status
 ```text
 Ticket 14：PASS / CLOSED
 Ticket 15：PASS / CLOSED
-Ticket 16：IMPL COMPLETE / SPAWN UNIT PASS ON WINDOWS / PENDING SAEHD GPU / AWAITING CENTRAL REVIEW
-Ticket 17：UNBLOCKED / OPEN / WAVE 1 / P1 HIGH
-Ticket 18：BLOCKED-BY-17 / WAVE 2
-Ticket 19：OPEN / INDEPENDENT / WAVE 1
-Ticket 20：BLOCKED-BY-16+17 / WAVE 2
+Ticket 16：IMPL COMPLETE / SPAWN UNIT PASS / PENDING SAEHD GPU / AWAITING CENTRAL REVIEW
+Ticket 17：IMPL COMPLETE / WORKERS+STRONG-FP+STALE / AWAITING CENTRAL REVIEW
+Ticket 18：WAVE 2（可 provisional 基于 Ticket 17 SHA）
+Ticket 19：OPEN / WAVE 1
+Ticket 20：WAVE 2（可 provisional 基于 16+17）
 Ticket 21：BLOCKED-BY-14—20
 Metadata Sampling：NOT PRODUCTION READY
-Windows spawn unit：PASS（本机 spawn smoke + debug=False generator）
+Windows spawn unit：PASS
 Windows SAEHD GPU training：PENDING
 Batch 3：BLOCKED
 ```
@@ -263,11 +266,23 @@ request_id 匹配，丢弃 stale response
 SampleGeneratorFace 持有 index_host 并 finalize
 focused 26 tests OK / process EXIT=0
 SAEHD 500 iter / save-resume：未跑
+impl：f9f846a
+```
+
+### Ticket 17 实现摘要（非 Final Review）
+
+```text
+--workers / --strong-fingerprint 真正生效
+quick/strong signature + analysis_config 持久化
+Loader trusted match + stale 不装旧 quality/pose
+spawn Pool workers；Packed path+offset 多进程
+focused 53 tests OK / EXIT=0
+1k/10k 性能基准：PARTIAL
 ```
 
 安全判断：
 
 ```text
 legacy_random / legacy_uniform_yaw：继续使用
-pose_balanced / quality_pose_balanced：Ticket 16 中央 Review + SAEHD GPU 验收 + Ticket 17—20 完成前，不用于正式生产结论
+pose_balanced / quality_pose_balanced：Wave 1 中央 Review + SAEHD GPU + Ticket 18—20 完成前，不用于正式生产结论
 ```

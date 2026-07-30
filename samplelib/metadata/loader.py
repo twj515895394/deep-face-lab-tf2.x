@@ -22,7 +22,13 @@ from samplelib.metadata.contracts import (
     get_yaw_bucket_id,
     is_record_structurally_valid,
 )
-from samplelib.metadata.fingerprint import build_dataset_fingerprint, build_sample_signature
+from samplelib.metadata.fingerprint import (
+    SIGNATURE_MODE_QUICK,
+    build_dataset_fingerprint,
+    build_signature_from_sample,
+    signature_mode_from_analysis_config,
+    signatures_match,
+)
 from samplelib.metadata.identity import build_sample_id, build_sample_key
 from samplelib.metadata.schema import SCHEMA_VERSION_CURRENT, FacesetMetadataV1, MetadataValidationIssue
 from samplelib.metadata.store import load_metadata
@@ -116,6 +122,14 @@ class RuntimeMetadata:
     record_matched: np.ndarray = field(default_factory=_empty_bool)
     image_valid: np.ndarray = field(default_factory=_empty_bool)
     landmarks_valid: np.ndarray = field(default_factory=_empty_bool)
+    # Ticket 17 trusted-match stats. matched_count == trusted_matched_count.
+    id_matched_count: int = 0
+    signature_matched_count: int = 0
+    stale_signature_count: int = 0
+    missing_record_count: int = 0
+    duplicate_count: int = 0
+    trusted_matched_count: int = 0
+    signature_mode: str = SIGNATURE_MODE_QUICK
 
     def is_usable_for_sampling(self, min_ratio: float = 0.90) -> bool:
         """
@@ -193,7 +207,20 @@ class FacesetMetadataLoader:
         image_valid = np.zeros(N, dtype=np.bool_)
         landmarks_valid = np.zeros(N, dtype=np.bool_)
 
-        def _neutral_runtime(status, fallback_reason, matched_count=0, matched_ratio=0.0, warnings=None, dataset_fingerprint=None):
+        def _neutral_runtime(
+            status,
+            fallback_reason,
+            matched_count=0,
+            matched_ratio=0.0,
+            warnings=None,
+            dataset_fingerprint=None,
+            id_matched_count=0,
+            signature_matched_count=0,
+            stale_signature_count=0,
+            missing_record_count=0,
+            duplicate_count=0,
+            signature_mode=SIGNATURE_MODE_QUICK,
+        ):
             return RuntimeMetadata(
                 status=status,
                 sample_count=N,
@@ -211,6 +238,13 @@ class FacesetMetadataLoader:
                 record_matched=record_matched,
                 image_valid=image_valid,
                 landmarks_valid=landmarks_valid,
+                id_matched_count=id_matched_count,
+                signature_matched_count=signature_matched_count,
+                stale_signature_count=stale_signature_count,
+                missing_record_count=missing_record_count,
+                duplicate_count=duplicate_count,
+                trusted_matched_count=matched_count,
+                signature_mode=signature_mode,
             )
 
         # 1. Attempt to load metadata JSON
@@ -270,9 +304,16 @@ class FacesetMetadataLoader:
         unknown_pitch_examples: List[str] = []
         duplicate_collision_count = 0
 
-        # 3. Identity mapping against runtime samples
+        # 3. Trusted match: sample_id match AND signature match under saved mode.
         is_packed = any(getattr(s, "_filename_offset_size", None) is not None for s in samples)
-        matched_count = 0
+        signature_mode = signature_mode_from_analysis_config(
+            getattr(loaded_meta, "analysis_config", None)
+        )
+        id_matched_count = 0
+        signature_matched_count = 0
+        stale_signature_count = 0
+        missing_record_count = 0
+        trusted_matched_count = 0
         current_sig_objects = []
 
         for i, s in enumerate(samples):
@@ -281,18 +322,14 @@ class FacesetMetadataLoader:
             key = build_sample_key(raw_filename, person_name=person_name, is_packed=is_packed, faceset_root=samples_path)
             sid = build_sample_id(key)
 
-            # Signature collection for dataset fingerprint check
-            off_size = getattr(s, "_filename_offset_size", None)
-            if off_size is not None:
-                _, offset, size = off_size
-                sig = build_sample_signature(key, byte_size=size, packed_offset=offset)
-            else:
-                abs_fp = samples_path / key if not Path(key).is_absolute() else Path(key)
-                if abs_fp.exists():
-                    stat = abs_fp.stat()
-                    sig = build_sample_signature(key, byte_size=stat.st_size, mtime_ns=stat.st_mtime_ns)
-                else:
-                    sig = build_sample_signature(key, byte_size=0)
+            # Build current signature under the saved metadata mode so strong
+            # sidecars are compared with strong current hashes.
+            sig = build_signature_from_sample(
+                sample=s,
+                sample_key=key,
+                samples_path=samples_path,
+                mode=signature_mode,
+            )
             current_sig_objects.append(sig)
 
             # Match against indexed records
@@ -300,76 +337,109 @@ class FacesetMetadataLoader:
                 duplicate_collision_count += 1
                 continue
 
-            if sid in meta_by_id:
-                rec = meta_by_id[sid]
-                # Unique sample_id hit (not a duplicate collision) counts as matched.
-                record_matched[i] = True
-                matched_count += 1
+            if sid not in meta_by_id:
+                missing_record_count += 1
+                continue
 
-                # Independent child flags first (R5-01): a malformed sibling must not
-                # prevent safe accessors from filling other diagnostic arrays.
-                # Sampling safety remains metadata_valid & business_valid.
-                image_valid[i] = get_record_image_valid(rec)
-                landmarks_valid[i] = get_record_landmarks_valid(rec)
+            rec = meta_by_id[sid]
+            id_matched_count += 1
+            # Ticket 14 contract: record_matched means unique sample_id hit.
+            record_matched[i] = True
 
-                # Quality validity and extraction
-                if get_record_quality_valid(rec):
-                    try:
-                        q_score = float(rec["quality"]["quality_score"])
-                        quality_scores[i] = q_score
-                        quality_valid[i] = True
-                    except (ValueError, TypeError, KeyError):
-                        pass
+            saved_sig = rec.get("signature") if isinstance(rec, dict) else None
+            if saved_sig is None:
+                # Legacy sidecar without per-sample signature: keep diagnostic mapping,
+                # but do not claim a cryptographic signature match.
+                sig_ok = True
+                legacy_unsigned = True
+            else:
+                legacy_unsigned = False
+                sig_ok = signatures_match(saved_sig, sig, mode=signature_mode)
 
-                # Pose validity and extraction using contract accessors
-                norm_yaw, y_id, y_valid = get_record_yaw_bucket(rec)
-                norm_pitch, p_id, p_valid = get_record_pitch_bucket(rec)
+            if not sig_ok:
+                # Same-name / same-id replacement: never trust old quality/pose.
+                stale_signature_count += 1
+                continue
 
-                p_info = rec.get("pose", {})
-                if isinstance(p_info, dict):
-                    raw_y_str = p_info.get("yaw_bucket")
-                    if isinstance(raw_y_str, str):
-                        raw_y_clean = raw_y_str.strip()
-                        if raw_y_clean in LEGACY_YAW_ALIASES:
-                            alias_yaw_count += 1
-                            if len(alias_yaw_examples) < _MAX_WARNING_EXAMPLES:
-                                alias_yaw_examples.append(f"{key}: '{raw_y_clean}' -> '{norm_yaw}'")
-                        elif not y_valid and raw_y_clean != "unknown":
-                            unknown_yaw_count += 1
-                            if len(unknown_yaw_examples) < _MAX_WARNING_EXAMPLES:
-                                unknown_yaw_examples.append(f"{key}: '{raw_y_clean}'")
+            if not legacy_unsigned:
+                signature_matched_count += 1
+            # Trusted for sampling when id matches and signature is OK (or legacy unsigned).
+            trusted_matched_count += 1
 
-                    raw_p_str = p_info.get("pitch_bucket")
-                    if isinstance(raw_p_str, str):
-                        raw_p_clean = raw_p_str.strip()
-                        if raw_p_clean in LEGACY_PITCH_ALIASES:
-                            alias_pitch_count += 1
-                            if len(alias_pitch_examples) < _MAX_WARNING_EXAMPLES:
-                                alias_pitch_examples.append(f"{key}: '{raw_p_clean}' -> '{norm_pitch}'")
-                        elif not p_valid and raw_p_clean != "unknown":
-                            unknown_pitch_count += 1
-                            if len(unknown_pitch_examples) < _MAX_WARNING_EXAMPLES:
-                                unknown_pitch_examples.append(f"{key}: '{raw_p_clean}'")
+            # Independent child flags first (R5-01): a malformed sibling must not
+            # prevent safe accessors from filling other diagnostic arrays.
+            # Sampling safety remains metadata_valid & business_valid.
+            image_valid[i] = get_record_image_valid(rec)
+            landmarks_valid[i] = get_record_landmarks_valid(rec)
 
-                is_pose_record_valid = get_record_pose_valid(rec)
-                if y_valid and is_pose_record_valid:
-                    yaw_bucket_ids[i] = y_id
-                    pose_valid[i] = True
-                elif y_valid and not is_pose_record_valid:
-                    yaw_bucket_ids[i] = y_id
-                    pose_valid[i] = False
+            # Quality validity and extraction
+            if get_record_quality_valid(rec):
+                try:
+                    q_score = float(rec["quality"]["quality_score"])
+                    quality_scores[i] = q_score
+                    quality_valid[i] = True
+                except (ValueError, TypeError, KeyError):
+                    pass
 
-                if p_valid:
-                    pitch_bucket_ids[i] = p_id
+            # Pose validity and extraction using contract accessors
+            norm_yaw, y_id, y_valid = get_record_yaw_bucket(rec)
+            norm_pitch, p_id, p_valid = get_record_pitch_bucket(rec)
 
-                # Structural gate is independent of per-child business validity.
-                metadata_valid[i] = is_record_structurally_valid(rec)
+            p_info = rec.get("pose", {})
+            if isinstance(p_info, dict):
+                raw_y_str = p_info.get("yaw_bucket")
+                if isinstance(raw_y_str, str):
+                    raw_y_clean = raw_y_str.strip()
+                    if raw_y_clean in LEGACY_YAW_ALIASES:
+                        alias_yaw_count += 1
+                        if len(alias_yaw_examples) < _MAX_WARNING_EXAMPLES:
+                            alias_yaw_examples.append(f"{key}: '{raw_y_clean}' -> '{norm_yaw}'")
+                    elif not y_valid and raw_y_clean != "unknown":
+                        unknown_yaw_count += 1
+                        if len(unknown_yaw_examples) < _MAX_WARNING_EXAMPLES:
+                            unknown_yaw_examples.append(f"{key}: '{raw_y_clean}'")
+
+                raw_p_str = p_info.get("pitch_bucket")
+                if isinstance(raw_p_str, str):
+                    raw_p_clean = raw_p_str.strip()
+                    if raw_p_clean in LEGACY_PITCH_ALIASES:
+                        alias_pitch_count += 1
+                        if len(alias_pitch_examples) < _MAX_WARNING_EXAMPLES:
+                            alias_pitch_examples.append(f"{key}: '{raw_p_clean}' -> '{norm_pitch}'")
+                    elif not p_valid and raw_p_clean != "unknown":
+                        unknown_pitch_count += 1
+                        if len(unknown_pitch_examples) < _MAX_WARNING_EXAMPLES:
+                            unknown_pitch_examples.append(f"{key}: '{raw_p_clean}'")
+
+            is_pose_record_valid = get_record_pose_valid(rec)
+            if y_valid and is_pose_record_valid:
+                yaw_bucket_ids[i] = y_id
+                pose_valid[i] = True
+            elif y_valid and not is_pose_record_valid:
+                yaw_bucket_ids[i] = y_id
+                pose_valid[i] = False
+
+            if p_valid:
+                pitch_bucket_ids[i] = p_id
+
+            # Structural gate is independent of per-child business validity.
+            metadata_valid[i] = is_record_structurally_valid(rec)
 
         # Collect bounded match-time warnings (one line per issue family).
         if duplicate_collision_count > 0:
             _append_bounded_warning(
                 warnings,
                 f"DUPLICATE_SAMPLE_ID_COLLISION count={duplicate_collision_count}",
+            )
+        if stale_signature_count > 0:
+            _append_bounded_warning(
+                warnings,
+                f"STALE_SIGNATURE_TOTAL count={stale_signature_count}",
+            )
+        if missing_record_count > 0:
+            _append_bounded_warning(
+                warnings,
+                f"MISSING_METADATA_RECORD count={missing_record_count}",
             )
         if alias_yaw_count > 0:
             _append_bounded_warning(
@@ -392,6 +462,8 @@ class FacesetMetadataLoader:
                 f"UNKNOWN_PITCH_BUCKET count={unknown_pitch_count} examples=[{', '.join(unknown_pitch_examples)}]",
             )
 
+        # matched_count semantics: trusted matches only (id + signature).
+        matched_count = trusted_matched_count
         matched_ratio = matched_count / float(N)
         current_fingerprint = build_dataset_fingerprint(current_sig_objects)
         saved_fingerprint = loaded_meta.dataset.get("fingerprint")
@@ -404,7 +476,7 @@ class FacesetMetadataLoader:
             status = FacesetMetadataStatus.PARTIAL_MATCH
             _append_bounded_warning(
                 warnings,
-                f"Fingerprint mismatch or partial match: {matched_count}/{N} matched ({matched_ratio * 100.0:.1f}%).",
+                f"Fingerprint mismatch or partial trusted match: {matched_count}/{N} trusted ({matched_ratio * 100.0:.1f}%).",
             )
             fallback_reason = None
         else:
@@ -412,7 +484,7 @@ class FacesetMetadataLoader:
             fallback_reason = f"MATCH_RATIO_TOO_LOW_{matched_ratio:.2f}_BELOW_{min_match_ratio:.2f}"
             _append_bounded_warning(
                 warnings,
-                f"Match ratio {matched_ratio:.2f} below threshold {min_match_ratio:.2f}.",
+                f"Trusted match ratio {matched_ratio:.2f} below threshold {min_match_ratio:.2f}.",
             )
 
         if strict and status != FacesetMetadataStatus.LOADED:
@@ -438,4 +510,11 @@ class FacesetMetadataLoader:
             record_matched=record_matched,
             image_valid=image_valid,
             landmarks_valid=landmarks_valid,
+            id_matched_count=id_matched_count,
+            signature_matched_count=signature_matched_count,
+            stale_signature_count=stale_signature_count,
+            missing_record_count=missing_record_count,
+            duplicate_count=duplicate_collision_count,
+            trusted_matched_count=trusted_matched_count,
+            signature_mode=signature_mode,
         )

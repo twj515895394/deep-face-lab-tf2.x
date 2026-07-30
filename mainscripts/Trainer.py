@@ -17,6 +17,51 @@ from samplelib.sampling.loss_stats import LossWindowTracker
 from mainscripts.trainer_save_control import TrainerSaveController
 
 
+def _error_richness_score(msg):
+    """Higher when structured save context (reason/iter) is present."""
+    if not isinstance(msg, dict):
+        return -1
+    score = 0
+    if msg.get("reason") not in (None, "", "unknown"):
+        score += 2
+    if msg.get("iter") is not None:
+        score += 2
+    if msg.get("error"):
+        score += 1
+    if msg.get("traceback"):
+        score += 1
+    if msg.get("error_type"):
+        score += 1
+    return score
+
+
+def prefer_richer_error(existing, incoming):
+    """
+    Keep first rich save error; do not let a generic outer error wipe reason/iter.
+
+    T19-R3-01: Controller emits {reason, iter, ...}; trainerThread outer except may
+    emit a second generic error. Prefer the richer payload, merging missing fields.
+    """
+    if existing is None:
+        return incoming if isinstance(incoming, dict) else None
+    if not isinstance(incoming, dict):
+        return existing
+    ex_score = _error_richness_score(existing)
+    in_score = _error_richness_score(incoming)
+    if in_score > ex_score:
+        base = dict(incoming)
+        for key in ("reason", "iter", "error", "error_type", "traceback"):
+            if base.get(key) in (None, "", "unknown") and existing.get(key) not in (None, ""):
+                base[key] = existing[key]
+        return base
+    # Keep existing; fill blanks from incoming only.
+    base = dict(existing)
+    for key in ("reason", "iter", "error", "error_type", "traceback"):
+        if base.get(key) in (None, "", "unknown") and incoming.get(key) not in (None, ""):
+            base[key] = incoming[key]
+    return base
+
+
 class TrainerClientState:
     """
     Main-thread view of trainerThread messages.
@@ -43,7 +88,7 @@ class TrainerClientState:
             return "continue"
         op = msg.get("op", "")
         if op == "error":
-            self.fatal_error = msg
+            self.fatal_error = prefer_richer_error(self.fatal_error, msg)
             return "continue"
         if op == "close":
             self.closed = True
@@ -284,15 +329,33 @@ def trainerThread (s2c, c2s, e,
         except Exception as e:
             print ('Error: %s' % (str(e)))
             traceback.print_exc()
+            # If Controller already put a rich {reason, iter, ...} error, do not
+            # overwrite it with a generic outer exception payload (T19-R3-01).
+            already_reported = False
             try:
-                c2s.put({
-                    'op': 'error',
-                    'error': str(e),
-                    'error_type': type(e).__name__,
-                    'traceback': traceback.format_exc(),
-                })
+                if 'ctrl' in locals() and getattr(ctrl, 'last_error', None) is not None:
+                    already_reported = True
             except Exception:
-                pass
+                already_reported = False
+            if not already_reported:
+                try:
+                    payload = {
+                        'op': 'error',
+                        'error': str(e),
+                        'error_type': type(e).__name__,
+                        'traceback': traceback.format_exc(),
+                    }
+                    try:
+                        if 'ctrl' in locals() and ctrl is not None:
+                            if getattr(ctrl, 'save_reasons', None):
+                                # Best-effort context when Controller did not emit.
+                                payload.setdefault('reason', 'trainer_exception')
+                            payload.setdefault('iter', int(model.get_iter()) if 'model' in locals() else None)
+                    except Exception:
+                        pass
+                    c2s.put(payload)
+                except Exception:
+                    pass
             try:
                 if 'model' in locals():
                     model.finalize()

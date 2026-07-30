@@ -368,6 +368,111 @@ class TestBatch2TrainerSaveWindow(unittest.TestCase):
         self.assertEqual(state.on_message({"op": "close"}), "exit_ok")
         state.raise_if_fatal()  # must not raise
 
+    def test_rich_error_not_overwritten_by_generic(self):
+        """T19-R3-01: rich → generic → close keeps reason/iter."""
+        from mainscripts.Trainer import TrainerClientState, prefer_richer_error
+
+        rich = {
+            "op": "error",
+            "reason": "manual",
+            "error": "disk full",
+            "error_type": "OSError",
+            "traceback": "tb-rich",
+            "iter": 42,
+        }
+        generic = {
+            "op": "error",
+            "error": "disk full",
+            "error_type": "OSError",
+            "traceback": "tb-generic",
+        }
+        merged = prefer_richer_error(rich, generic)
+        self.assertEqual(merged["reason"], "manual")
+        self.assertEqual(merged["iter"], 42)
+
+        state = TrainerClientState()
+        self.assertEqual(state.on_message(rich), "continue")
+        self.assertEqual(state.on_message(generic), "continue")
+        self.assertEqual(state.on_message({"op": "close"}), "exit_error")
+        self.assertEqual(state.fatal_error["reason"], "manual")
+        self.assertEqual(state.fatal_error["iter"], 42)
+        with self.assertRaises(RuntimeError) as ctx:
+            state.raise_if_fatal()
+        text = str(ctx.exception)
+        self.assertIn("manual", text)
+        self.assertIn("42", text)
+
+    def test_controller_save_fail_reasons_preserve_context(self):
+        """manual/scheduled/target/exit save failures all emit reason+iter."""
+        for reason, setup in (
+            ("manual", lambda c, s: (s.put({"op": "save"}), c.process_commands(s))),
+            ("scheduled", lambda c, s: c.model_save(reason="scheduled")),
+            ("target_reached", None),
+            ("exit", lambda c, s: (s.put({"op": "close"}), c.process_commands(s))),
+        ):
+            if reason == "target_reached":
+                model = FakeModel(fail_save_times=1)
+                model.target_iter = 1
+                logs: List[str] = []
+                ctrl, _, c2s = self._make_ctrl(model, logs, warmup_iters=0)
+                with self.assertRaises(RuntimeError):
+                    ctrl.run_train_group(queue.Queue())
+            else:
+                model = FakeModel(fail_save_times=1, start_iter=10)
+                logs = []
+                ctrl, _, c2s = self._make_ctrl(model, logs, warmup_iters=0)
+                ctrl.train_one_recorded()
+                s2c = queue.Queue()
+                with self.assertRaises(RuntimeError):
+                    setup(ctrl, s2c)
+            err = c2s.get_nowait()
+            self.assertEqual(err["op"], "error", msg=reason)
+            self.assertEqual(err["reason"], reason)
+            self.assertIn("iter", err)
+            self.assertIsNotNone(err["iter"])
+
+    def test_save_fail_sequence_matches_trainer_thread_contract(self):
+        """
+        Simulate real trainerThread sequence:
+          Controller rich error → optional generic outer error → close
+        and consume via TrainerClientState as Trainer.main would.
+        """
+        from mainscripts.Trainer import TrainerClientState
+
+        model = FakeModel(fail_save_times=1, start_iter=10)
+        logs: List[str] = []
+        ctrl, window, c2s = self._make_ctrl(model, logs, warmup_iters=0)
+        ctrl.train_one_recorded()
+
+        with self.assertRaises(RuntimeError):
+            ctrl.model_save(reason="scheduled")
+        self.assertIsNotNone(ctrl.last_error)
+
+        # Outer except must not wipe rich context: either skip or merge.
+        # Mimic fixed trainerThread: already_reported → no second put.
+        # Also assert client-side prefer keeps reason if a generic arrives.
+        rich = c2s.get_nowait()
+        self.assertEqual(rich["reason"], "scheduled")
+        self.assertEqual(rich["iter"], 11)
+
+        state = TrainerClientState()
+        state.on_message(rich)
+        state.on_message(
+            {
+                "op": "error",
+                "error": str(ctrl.last_error),
+                "error_type": type(ctrl.last_error).__name__,
+                "traceback": "outer-tb",
+            }
+        )
+        self.assertEqual(state.on_message({"op": "close"}), "exit_error")
+        with self.assertRaises(RuntimeError) as ctx:
+            state.raise_if_fatal()
+        self.assertIn("scheduled", str(ctx.exception))
+        self.assertIn("11", str(ctx.exception))
+        self.assertEqual(len(window), 1)
+        self.assertEqual(model.save_calls, 0)
+
     def test_failed_exit_save_emits_error_and_stops(self):
         model = FakeModel(fail_save_times=1, start_iter=10)
         logs: List[str] = []

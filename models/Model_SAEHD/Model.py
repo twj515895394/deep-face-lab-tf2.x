@@ -1181,23 +1181,33 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
 
             from samplelib.sampling.runtime import build_sampling_runtime
 
-            src_seed = self.options.get("seed", 42)
-            dst_seed = src_seed
+            enh_cfg = (
+                self.enhancements
+                if ENHANCEMENTS_AVAILABLE and self.enhancements is not None
+                else normalize_enhancement_config(None)
+            )
+            # One authority: resolve side configs here and pass explicitly so SRC/DST
+            # never silently share a single flat SamplingConfig by accident.
+            src_sampling_cfg = enh_cfg.sampling_config_for("src")
+            dst_sampling_cfg = enh_cfg.sampling_config_for("dst")
+            model_seed = self.options.get("seed", 42)
 
             src_runtime = build_sampling_runtime(
                 role="src",
                 samples_path=training_data_src_path,
-                enhancement_config=self.enhancements if ENHANCEMENTS_AVAILABLE else normalize_enhancement_config(None),
+                enhancement_config=enh_cfg,
+                sampling_config=src_sampling_cfg,
                 legacy_uniform_yaw=self.options['uniform_yaw'] or self.pretrain,
-                base_seed=src_seed,
+                base_seed=model_seed,
             )
 
             dst_runtime = build_sampling_runtime(
                 role="dst",
                 samples_path=training_data_dst_path,
-                enhancement_config=self.enhancements if ENHANCEMENTS_AVAILABLE else normalize_enhancement_config(None),
+                enhancement_config=enh_cfg,
+                sampling_config=dst_sampling_cfg,
                 legacy_uniform_yaw=self.options['uniform_yaw'] or self.pretrain,
-                base_seed=dst_seed,
+                base_seed=model_seed,
             )
 
             self.src_sampling_runtime = src_runtime

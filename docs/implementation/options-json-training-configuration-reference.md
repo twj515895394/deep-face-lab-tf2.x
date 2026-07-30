@@ -3,7 +3,7 @@
 > 文档状态：**ACTIVE / SINGLE SOURCE OF TRUTH**  
 > 适用分支：`codex/batch2-metadata-sampling-design` 及后续合并分支  
 > 首次建立：2026-07-29  
-> 当前文档版本：v1.0  
+> 当前文档版本：v1.1  
 > 维护原则：任何新增、删除、重命名或改变语义的训练参数，必须在同一提交或同一 PR 中同步更新本文档、对应测试和示例。
 
 ---
@@ -335,7 +335,13 @@ Batch 2 新增参数全部放在顶层 `enhancements` 对象内，不把 `sampli
       "max_sample_weight": 2.0,
       "min_metadata_match_ratio": 0.9,
       "seed": 12345,
-      "log_interval_draws": 10000
+      "log_interval_draws": 10000,
+      "src": {
+        "mode": "quality_pose_balanced"
+      },
+      "dst": {
+        "mode": "pose_balanced"
+      }
     },
     "runtime": {
       "fallback_on_optional_error": true,
@@ -345,14 +351,18 @@ Batch 2 新增参数全部放在顶层 `enhancements` 对象内，不把 `sampli
 }
 ```
 
+`training` / `sampling` / `runtime` 若出现在 `enhancements` 之外的 options 顶层，启动时会输出明确 warning，且不会被当作 Batch 2 配置生效。
+
 当前状态：
 
 ```text
 EnhancementConfig 基础骨架：IMPLEMENTED
 training.enabled：IMPLEMENTED
-training.metadata_sampling：字段骨架 IMPLEMENTED，完整运行时 BATCH2-PLANNED
-sampling mapping 解析：BATCH2-PLANNED（Ticket 06 / 10）
-SAEHD Generator 接线：BATCH2-PLANNED（Ticket 09 / 10）
+training.metadata_sampling：IMPLEMENTED（双 Gate）
+sampling 扁平解析：IMPLEMENTED
+sampling.src / sampling.dst：IMPLEMENTED（Ticket 15）
+SAEHD Generator 分侧接线：IMPLEMENTED（Ticket 15）
+Windows spawn / 生产验收：PENDING（Ticket 16—21）
 ```
 
 ---
@@ -371,10 +381,10 @@ enhancements.training.metadata_sampling == true
 
 | `training.enabled` | `metadata_sampling` | 行为 |
 |---:|---:|---|
-| false | false | Legacy |
-| false | true | Legacy；不得加载 Metadata |
-| true | false | Legacy |
-| true | true | 根据 `sampling.mode` 解析 |
+| false | false | Legacy；不加载 Metadata |
+| false | true | Legacy；不加载 Metadata，并输出 gate warning |
+| true | false | Legacy；不加载 Metadata |
+| true | true | 按 side config 加载 Metadata 并解析 Policy |
 
 这两个字段必须在 `--options-json` 测试中单独覆盖。
 
@@ -382,14 +392,42 @@ enhancements.training.metadata_sampling == true
 
 ## 8. Batch 2 Sampling 参数注册表
 
+### 8.0 扁平 base 与 SRC/DST 继承（Ticket 15）
+
+解析优先级：
+
+```text
+SamplingConfig 默认值
+→ enhancements.sampling 扁平 base 字段
+→ enhancements.sampling.src / .dst override
+```
+
+规则：
+
+| 场景 | SRC | DST |
+|---|---|---|
+| 仅扁平 `mode` 等 | 使用 base | 使用 base |
+| 仅 `src` / `dst` | 各自 override（其余字段默认） | 各自 override |
+| base + side | base 字段 + side 覆盖 | base 字段 + side 覆盖 |
+| 只有 `src` | base+src | **base**（不复制 src） |
+| 非法 `"src": "pose_balanced"` | 忽略该侧并 warning | 不受影响 |
+
+API：
+
+```python
+enhancements.sampling_config          # base/global，仅兼容旧调用
+enhancements.sampling_config_for("src")
+enhancements.sampling_config_for("dst")  # 未知 role → ValueError
+```
+
 ### 8.1 `mode`
 
 | 项目 | 值 |
 |---|---|
-| JSON Path | `enhancements.sampling.mode` |
+| JSON Path | `enhancements.sampling.mode`（base）或 `enhancements.sampling.src.mode` / `.dst.mode` |
 | 类型 | string |
 | 默认 | `"legacy"` |
-| 状态 | `BATCH2-PLANNED` |
+| 状态 | `IMPLEMENTED` |
 
 允许值：
 
@@ -407,41 +445,32 @@ enhancements.training.metadata_sampling == true
 
 | 项目 | 值 |
 |---|---|
-| JSON Path | `enhancements.sampling.metadata_path` |
+| JSON Path | `enhancements.sampling.metadata_path`（及 side override） |
 | 类型 | null 或 string |
 | 默认 | `null` |
-| 状态 | `BATCH2-PLANNED` |
+| 状态 | `IMPLEMENTED` |
 
-v1 语义：
-
-```text
-null
-→ SRC: <training_data_src_path>/faceset_metadata.v1.json
-→ DST: <training_data_dst_path>/faceset_metadata.v1.json
-```
-
-非空字符串在 v1 中定义为 **相对于每一侧 faceset 根目录的相对路径**：
-
-```json
-"metadata_path": "metadata/faceset_metadata.v1.json"
-```
-
-分别解析为：
+解析函数：`samplelib.sampling.config.resolve_metadata_path(samples_path, configured_path)`
 
 ```text
-<src_faceset>/metadata/faceset_metadata.v1.json
-<dst_faceset>/metadata/faceset_metadata.v1.json
+null / ""
+→ <该侧 faceset>/faceset_metadata.v1.json
+
+相对路径
+→ 相对该侧 faceset 根目录解析
+→ 规范化后不得逃逸 faceset 根；`../` 逃逸抛配置错误（不 fallback 为 missing）
+
+绝对路径
+→ 允许；启动日志显式记录 resolved path
 ```
 
 安全规则：
 
 - 拒绝 `..` 越界；
 - 支持中文、空格、emoji 和其他 Unicode；
-- v1 不接受一个绝对路径同时应用到 SRC/DST；
+- SRC/DST 各自解析，互不影响；
 - 不扫描目录猜测多个 JSON；
 - 训练启动时不自动运行 Analyzer。
-
-如后续需要 SRC/DST 独立显式路径，应新增经过版本化的字段，而不是改变当前字符串语义。
 
 ### 8.3 `fallback_mode`
 
@@ -450,7 +479,7 @@ null
 | JSON Path | `enhancements.sampling.fallback_mode` |
 | 类型 | string |
 | 默认 | `"legacy_random"` |
-| 状态 | `BATCH2-PLANNED` |
+| 状态 | `IMPLEMENTED` |
 
 只允许：
 
@@ -469,7 +498,7 @@ legacy_uniform_yaw
 | 类型 | finite float |
 | 默认 | `0.5` |
 | 安全范围 | `0.0 .. 1.0` |
-| 状态 | `BATCH2-PLANNED` |
+| 状态 | `IMPLEMENTED` |
 
 语义：
 
@@ -487,7 +516,7 @@ legacy_uniform_yaw
 | 类型 | finite float |
 | 默认 | `0.5` |
 | 安全范围 | `0.0 .. 1.0` |
-| 状态 | `BATCH2-PLANNED` |
+| 状态 | `IMPLEMENTED` |
 
 `0.5` 对应 Quality 权重大致为 `0.5 .. 1.5`。它只影响抽样概率，不乘训练 Loss。
 
@@ -498,9 +527,8 @@ legacy_uniform_yaw
 | JSON Path | `enhancements.sampling.uniform_mix` |
 | 类型 | finite float |
 | 默认 | `0.1` |
-| 硬范围 | `0.0 .. 0.30` |
-| 推荐范围 | `0.05 .. 0.30` |
-| 状态 | `BATCH2-PLANNED` |
+| 硬范围 | `0.0 .. 1.0`（推荐 `0.05 .. 0.30`） |
+| 状态 | `IMPLEMENTED` |
 
 公式：
 
@@ -517,8 +545,8 @@ p_final = (1-uniform_mix) * p_weighted + uniform_mix * (1/N)
 | JSON Path | `enhancements.sampling.min_sample_weight` |
 | 类型 | finite float |
 | 默认 | `0.5` |
-| 硬范围 | `0.25 .. 1.0` |
-| 状态 | `BATCH2-PLANNED` |
+| 硬范围 | `0.01 .. 100.0`（解析层） |
+| 状态 | `IMPLEMENTED` |
 
 不得设置为 0。
 
@@ -529,8 +557,8 @@ p_final = (1-uniform_mix) * p_weighted + uniform_mix * (1/N)
 | JSON Path | `enhancements.sampling.max_sample_weight` |
 | 类型 | finite float |
 | 默认 | `2.0` |
-| 硬范围 | `1.0 .. 3.0` |
-| 状态 | `BATCH2-PLANNED` |
+| 硬范围 | `0.01 .. 100.0`（解析层） |
+| 状态 | `IMPLEMENTED` |
 
 必须满足：
 
@@ -548,7 +576,7 @@ min_sample_weight < max_sample_weight
 | 类型 | finite float |
 | 默认 | `0.9` |
 | 范围 | `0.0 .. 1.0` |
-| 状态 | `BATCH2-PLANNED` |
+| 状态 | `IMPLEMENTED` |
 
 语义：当前 faceset 与 Metadata 精确匹配比例低于此值时，不允许启用智能 Sampling。
 
@@ -556,18 +584,18 @@ min_sample_weight < max_sample_weight
 
 | 项目 | 值 |
 |---|---|
-| JSON Path | `enhancements.sampling.seed` |
+| JSON Path | `enhancements.sampling.seed`（及 side override） |
 | 类型 | null 或 integer |
 | 默认 | `null` |
-| 支持范围 | `0 .. 4294967295` |
-| 状态 | `BATCH2-PLANNED` |
+| 支持范围 | integer 可解析范围 |
+| 状态 | `IMPLEMENTED` |
 
 规则：
 
-- `null`：创建独立非固定 RNG；
-- integer：固定 Batch 2 新 Sampling RNG；
+- `null`：从模型 `seed` 派生（SRC = base+1000，DST = base+2000）；
+- integer / side seed：固定该侧 Batch 2 Sampling RNG；
 - 不污染 NumPy 全局 RNG；
-- SRC/DST 使用稳定 role 派生 seed，不能得到同一索引流；
+- SRC/DST 不得得到同一默认索引流；
 - 不承诺不同 OS 并发调度下逐 worker batch 完全一致。
 
 ### 8.11 `log_interval_draws`
@@ -577,8 +605,8 @@ min_sample_weight < max_sample_weight
 | JSON Path | `enhancements.sampling.log_interval_draws` |
 | 类型 | integer |
 | 默认 | `10000` |
-| 安全范围 | `1000 .. 10000000` |
-| 状态 | `BATCH2-PLANNED` |
+| 安全范围 | `>= 100` |
+| 状态 | `IMPLEMENTED` |
 
 表示累计抽样多少次后输出一次 Sampling Stats。不得按每 iteration 扫描全量样本。
 
@@ -924,13 +952,18 @@ seed 或 random 状态
 
 ```text
 [Sampling][src]
+  gates: training.enabled=true, metadata_sampling=true
   requested: quality_pose_balanced
   effective: quality_pose_balanced
-  metadata: loaded, matched=1000/1000
+  config source: base+src_override
+  metadata path: ...
+  metadata: loaded, matched=1000/1000 (100.0%)
+  trusted match: 1000/1000 (100.0%)
   fallback: none
+  seed: 1042
 ```
 
-不能只通过“成功注入 N 项参数”的日志判断 Batch 2 已经生效。
+不能只通过“成功注入 N 项参数”的日志判断 Batch 2 已经生效；必须断言 SRC/DST 的 `requested_mode` 分别符合配置。
 
 ---
 
@@ -1079,6 +1112,7 @@ Batch 2 配置规模适合直接传参。若未来 JSON 过大，应设计 `--op
 
 | 日期 | 文档版本 | 变更 | 关联 |
 |---|---|---|---|
+| 2026-07-30 | v1.1 | Ticket 15：登记 `sampling.src`/`dst`、双 Gate、metadata_path 逃逸规则、分侧日志与 API `sampling_config_for` | Ticket 15 |
 | 2026-07-29 | v1.0 | 建立 `--options-json` 权威参考；登记当前 SAEHD 参数、Batch 2 Sampling Schema、调用示例和同步规则 | Batch 2 设计分支 |
 
 ---

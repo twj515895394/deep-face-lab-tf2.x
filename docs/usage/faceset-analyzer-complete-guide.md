@@ -405,9 +405,9 @@ enhancements.training.enabled == true
 enhancements.training.metadata_sampling == true
 ```
 
-### 11.2 当前代码的全局采样配置
+### 11.2 扁平采样配置（向后兼容）
 
-在 Ticket 15 完成前，当前实现只解析一份扁平 `enhancements.sampling`，SRC 和 DST 共用同一个采样模式：
+扁平 `enhancements.sampling` 字段同时作为 SRC/DST 的 base：
 
 ```json
 {
@@ -442,12 +442,9 @@ enhancements.training.metadata_sampling == true
 
 - SRC 从 SRC aligned 目录读取 Sidecar；
 - DST 从 DST aligned 目录读取 Sidecar；
-- 两侧文件路径独立；
-- 但 requested mode 当前相同。
+- 两侧路径与 seed 独立派生。
 
-### 11.3 Ticket 15 目标形状
-
-Ticket 15 将正式实现并文档化侧别配置，同时保留扁平配置兼容：
+### 11.3 正式 SRC/DST 侧别配置（Ticket 15 已实现）
 
 ```json
 {
@@ -458,20 +455,23 @@ Ticket 15 将正式实现并文档化侧别配置，同时保留扁平配置兼�
       "metadata_sampling": true
     },
     "sampling": {
+      "fallback_mode": "legacy_random",
+      "uniform_mix": 0.1,
       "src": {
         "mode": "quality_pose_balanced",
-        "metadata_path": null
+        "quality_strength": 0.7
       },
       "dst": {
-        "mode": "pose_balanced",
-        "metadata_path": null
+        "mode": "pose_balanced"
       }
     }
   }
 }
 ```
 
-Ticket 15 验收完成前，不得把 `sampling.src` / `sampling.dst` 写成当前已生效能力。
+解析优先级：默认值 → 扁平 base → `sampling.<role>` override。  
+只有 `src` 时，DST 使用 base，**不会**自动复制 SRC。  
+错误顶层 `training`/`sampling`/`runtime`（不在 `enhancements` 内）会输出明确 warning。
 
 ---
 

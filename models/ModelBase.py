@@ -266,7 +266,21 @@ class ModelBase(object):
         if self.options_json is not None and len(self.options_json) > 0:
             try:
                 new_options = json.loads(self.options_json)
-                
+
+                # Batch 2 keys at options root are unsupported (must live under enhancements).
+                # Never silently ignore — emit an explicit startup warning.
+                try:
+                    from core.enhancements.config import (
+                        detect_misplaced_batch2_top_level_keys,
+                        format_misplaced_batch2_keys_warning,
+                    )
+                    misplaced = detect_misplaced_batch2_top_level_keys(new_options)
+                    if misplaced:
+                        io.log_info(format_misplaced_batch2_keys_warning(misplaced))
+                except Exception:
+                    # Warning helper must not break options injection.
+                    pass
+
                 # 结构参数防护列表
                 structural_keys = {'resolution', 'archi', 'ae_dims', 'e_dims', 'd_dims', 'd_mask_dims', 'head_name'}
 
@@ -294,6 +308,7 @@ class ModelBase(object):
                         except (ValueError, TypeError):
                             val = v
                     else:
+                        # Nested objects (e.g. enhancements) keep JSON types as-is.
                         val = v
 
                     # 3. 特殊逻辑修正：lr_dropout 的布尔与字符映射 ('y'/'n'/'cpu')

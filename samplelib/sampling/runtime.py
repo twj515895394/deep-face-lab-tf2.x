@@ -8,7 +8,7 @@ from core.enhancements import EnhancementConfig
 from core.interact import interact as io
 from samplelib.SampleLoader import SampleLoader, SampleType
 from samplelib.metadata.loader import FacesetMetadataLoader, FacesetMetadataStatus, RuntimeMetadata
-from samplelib.sampling.config import SamplingConfig
+from samplelib.sampling.config import SamplingConfig, resolve_metadata_path
 from samplelib.sampling.factory import SamplingPolicyFactory, SamplingResolution
 from samplelib.sampling.policies import SamplingPolicy
 
@@ -19,6 +19,7 @@ class SamplingRuntime:
     metadata_runtime: Optional[RuntimeMetadata]
     resolution: SamplingResolution
     startup_log: Dict[str, Any]
+    sampling_config: Optional[SamplingConfig] = None
 
     @property
     def policy(self) -> SamplingPolicy:
@@ -31,37 +32,53 @@ def build_sampling_runtime(
     enhancement_config: EnhancementConfig,
     legacy_uniform_yaw: bool = False,
     base_seed: Optional[int] = None,
+    sampling_config: Optional[SamplingConfig] = None,
 ) -> SamplingRuntime:
     """
     Build SamplingRuntime for src or dst faceset directory, resolving metadata,
     policy, fallback reason, and printing structured startup logs.
-    """
-    samples_path = Path(samples_path)
-    sampling_enabled = enhancement_config.is_enabled("training.metadata_sampling")
-    sampling_cfg = enhancement_config.sampling_config
 
-    if base_seed is not None and sampling_cfg.seed is None:
-        role_seed_offset = 1000 if role == "src" else 2000
-        derived_seed = base_seed + role_seed_offset
-        sampling_cfg = SamplingConfig(
-            mode=sampling_cfg.mode,
-            fallback_mode=sampling_cfg.fallback_mode,
-            pose_balance_strength=sampling_cfg.pose_balance_strength,
-            quality_strength=sampling_cfg.quality_strength,
-            uniform_mix=sampling_cfg.uniform_mix,
-            min_sample_weight=sampling_cfg.min_sample_weight,
-            max_sample_weight=sampling_cfg.max_sample_weight,
-            min_metadata_match_ratio=sampling_cfg.min_metadata_match_ratio,
-            seed=derived_seed,
-            log_interval_draws=sampling_cfg.log_interval_draws,
+    Authority for side config:
+      sampling_config argument if provided, else enhancement_config.sampling_config_for(role)
+    """
+    role_key = str(role).strip().lower()
+    if role_key not in ("src", "dst"):
+        raise ValueError(f"Unknown sampling role {role!r}; expected 'src' or 'dst'")
+
+    samples_path = Path(samples_path)
+    gate = enhancement_config.metadata_sampling_gate_state()
+    sampling_enabled = bool(gate["open"])
+
+    if sampling_config is None:
+        sampling_cfg = enhancement_config.sampling_config_for(role_key)
+        config_source = enhancement_config.sampling_config_source(role_key)
+    else:
+        sampling_cfg = sampling_config
+        config_source = "explicit"
+
+    # Side seed wins; otherwise derive from model base seed with distinct SRC/DST offsets.
+    if sampling_cfg.seed is None and base_seed is not None:
+        role_seed_offset = 1000 if role_key == "src" else 2000
+        sampling_cfg = sampling_cfg.with_seed(int(base_seed) + role_seed_offset)
+
+    # metadata_path escape is a configuration error — never treat as missing-metadata fallback.
+    requested_metadata_path = resolve_metadata_path(samples_path, sampling_cfg.metadata_path)
+    absolute_configured = (
+        sampling_cfg.metadata_path is not None
+        and Path(str(sampling_cfg.metadata_path)).is_absolute()
+    )
+
+    # Dual-gate partial open: metadata_sampling requested but training.enabled is false.
+    if gate["metadata_sampling"] and not gate["training_enabled"]:
+        io.log_info(
+            f"[Sampling][{role_key}] gate warning: training.metadata_sampling=true but "
+            f"training.enabled=false; metadata not loaded, using legacy."
         )
 
-    # Path resolution
-    requested_metadata_path = (
-        Path(sampling_cfg.metadata_path)
-        if sampling_cfg.metadata_path
-        else (samples_path / "faceset_metadata.v1.json")
-    )
+    for warn in enhancement_config.config_warnings:
+        # Bound noise: only emit sampling-related warnings once per side at startup.
+        if "sampling" in warn.lower() or "mode" in warn.lower() or "fallback" in warn.lower():
+            io.log_info(f"[Sampling][{role_key}] config: {warn}")
 
     rt_meta: Optional[RuntimeMetadata] = None
     if sampling_enabled:
@@ -96,6 +113,7 @@ def build_sampling_runtime(
             metadata_sampling_enabled=sampling_enabled,
             legacy_uniform_yaw=legacy_uniform_yaw,
             runtime_metadata=rt_meta,
+            role=role_key,
         )
     except Exception as e:
         if not enhancement_config.fallback_on_optional_error:
@@ -105,6 +123,7 @@ def build_sampling_runtime(
             metadata_sampling_enabled=False,
             legacy_uniform_yaw=legacy_uniform_yaw,
             runtime_metadata=rt_meta,
+            role=role_key,
         )
 
     if (
@@ -118,50 +137,84 @@ def build_sampling_runtime(
             "fallback_on_optional_error is False."
         )
 
-    # Build startup log dict
-    startup_log = {
-        "role": role,
+    startup_log: Dict[str, Any] = {
+        "role": role_key,
+        "gates": {
+            "training.enabled": gate["training_enabled"],
+            "metadata_sampling": gate["metadata_sampling"],
+            "open": gate["open"],
+        },
         "requested_mode": resolution.requested_mode,
         "effective_mode": resolution.effective_mode,
         "fallback_reason": resolution.fallback_reason,
-        "metadata_status": rt_meta.status.value if rt_meta else "disabled",
+        "config_source": config_source,
+        "metadata_path": str(requested_metadata_path),
+        "metadata_path_absolute_configured": absolute_configured,
+        "metadata_status": rt_meta.status.value if rt_meta else ("disabled" if not sampling_enabled else "unavailable"),
         "sample_count": rt_meta.sample_count if rt_meta else 0,
         "matched_count": rt_meta.matched_count if rt_meta else 0,
         "matched_ratio": rt_meta.matched_ratio if rt_meta else 0.0,
         "fingerprint": rt_meta.dataset_fingerprint if rt_meta else None,
+        "seed": sampling_cfg.seed,
+        "mode": sampling_cfg.mode.value,
     }
 
     if resolution.policy and hasattr(resolution.policy, "describe"):
         startup_log["policy_details"] = resolution.policy.describe()
 
-    # Format & print startup log using io.log_info
     log_lines = [
-        f"[Sampling][{role}]",
+        f"[Sampling][{role_key}]",
+        (
+            f"  gates: training.enabled={str(gate['training_enabled']).lower()}, "
+            f"metadata_sampling={str(gate['metadata_sampling']).lower()}"
+            if sampling_enabled
+            else "  gates: disabled"
+        ),
         f"  requested: {resolution.requested_mode}",
         f"  effective: {resolution.effective_mode}",
+        f"  config source: {config_source}",
+        f"  metadata path: {requested_metadata_path}",
     ]
 
-    if rt_meta and rt_meta.status == FacesetMetadataStatus.LOADED:
+    if absolute_configured:
+        log_lines.append(f"  metadata path (absolute configured): {requested_metadata_path}")
+
+    if not sampling_enabled:
+        log_lines.append("  metadata: not loaded")
+    elif rt_meta and rt_meta.status == FacesetMetadataStatus.LOADED:
         log_lines.append(
-            f"  metadata: loaded, matched={rt_meta.matched_count}/{rt_meta.sample_count} ({rt_meta.matched_ratio * 100:.1f}%)"
+            f"  metadata: loaded, matched={rt_meta.matched_count}/{rt_meta.sample_count} "
+            f"({rt_meta.matched_ratio * 100:.1f}%)"
+        )
+        log_lines.append(
+            f"  trusted match: {rt_meta.matched_count}/{rt_meta.sample_count} "
+            f"({rt_meta.matched_ratio * 100:.1f}%)"
         )
         if rt_meta.dataset_fingerprint:
             log_lines.append(f"  fingerprint: {rt_meta.dataset_fingerprint[:16]}...")
     elif rt_meta:
         log_lines.append(f"  metadata: {rt_meta.status.value}")
+        log_lines.append(
+            f"  trusted match: {rt_meta.matched_count}/{rt_meta.sample_count} "
+            f"({rt_meta.matched_ratio * 100:.1f}%)"
+        )
     else:
-        log_lines.append("  metadata: disabled (master flag off)")
+        log_lines.append("  metadata: unavailable")
 
     if resolution.fallback_reason:
         log_lines.append(f"  fallback reason: {resolution.fallback_reason}")
     else:
         log_lines.append("  fallback: none")
 
+    if sampling_cfg.seed is not None:
+        log_lines.append(f"  seed: {sampling_cfg.seed}")
+
     io.log_info("\n".join(log_lines))
 
     return SamplingRuntime(
-        role=role,
+        role=role_key,
         metadata_runtime=rt_meta,
         resolution=resolution,
         startup_log=startup_log,
+        sampling_config=sampling_cfg,
     )

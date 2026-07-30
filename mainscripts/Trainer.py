@@ -13,10 +13,8 @@ from core import imagelib
 import cv2
 import models
 from core.interact import interact as io
-from samplelib.sampling.loss_stats import (
-    LossWindowTracker,
-    format_loss_window_log,
-)
+from samplelib.sampling.loss_stats import LossWindowTracker
+from mainscripts.trainer_save_control import TrainerSaveController
 
 def trainerThread (s2c, c2s, e,
                     model_class_name = None,
@@ -73,55 +71,23 @@ def trainerThread (s2c, c2s, e,
                 save_interval_min = 25
             io.log_info(f"Auto-save interval: {save_interval_min} minutes.")
 
-            is_reached_goal = model.is_reached_iter_goal()
-
-            loss_string = ""
-            save_iter =  model.get_iter()
             # Session-local window buffer: empty on resume so old history is not mixed in.
             loss_window = LossWindowTracker()
+            ctrl = TrainerSaveController(
+                model=model,
+                loss_window=loss_window,
+                c2s=c2s,
+                debug=debug,
+                warmup_iters=cuda_graph_warmup_iters,
+                log_info_fn=io.log_info,
+            )
+            is_reached_goal = ctrl.is_reached_goal
 
-            def _record_train_loss():
-                """Append latest train loss into the save window (immune to history compression)."""
-                try:
-                    loss_window.append_from_model_history(model.get_loss_history())
-                except Exception:
-                    # Logging/window tracking must not break training core path.
-                    pass
+            loss_string = ""
 
-            def model_save(reason="scheduled"):
-                """
-                Freeze window -> save -> log immediately on success -> commit.
-                On save failure: re-raise, keep buffer, do not log success, do not preview.
-                """
-                if debug or is_reached_goal:
-                    return False
-
-                frozen = loss_window.freeze()
-                io.log_info("Saving....", end='\r')
-                # Only successful return from model.save() counts as success.
-                model.save()
-
-                stats = loss_window.stats_for_frozen(frozen)
-                try:
-                    log_line = format_loss_window_log(
-                        reason=reason,
-                        iter_num=model.get_iter(),
-                        stats=stats,
-                    )
-                    io.log_info(log_line)
-                except Exception as log_exc:
-                    # Do not fail training because of log formatting.
-                    io.log_info(
-                        f"[Save][{reason}] iter={model.get_iter()} window={len(frozen)} "
-                        f"(stats log failed: {type(log_exc).__name__})"
-                    )
-
-                loss_window.commit()
-                return True
-                    
             def model_backup():
-                if not debug and not is_reached_goal:
-                    model.create_backup()             
+                if not debug and not ctrl.is_reached_goal:
+                    model.create_backup()
 
             def send_preview():
                 if not debug:
@@ -133,7 +99,7 @@ def trainerThread (s2c, c2s, e,
                 e.set() #Set the GUI Thread as Ready
 
             if model.get_target_iter() != 0:
-                if is_reached_goal:
+                if ctrl.is_reached_goal:
                     io.log_info('Model already trained to target iteration. You can use preview.')
                 else:
                     io.log_info('Starting. Target iteration: %d. Press "Enter" to stop training and save model.' % ( model.get_target_iter()  ) )
@@ -144,7 +110,21 @@ def trainerThread (s2c, c2s, e,
 
             timed_execute_programs = [ [x[0], x[1], time.time() ] for x in execute_programs ]
 
+            def _on_preview_cmd():
+                if ctrl.is_reached_goal:
+                    model.pass_one_iter()
+                send_preview()
+
             for i in itertools.count(0,1):
+                # High-priority control commands before any train group.
+                if ctrl.process_commands(
+                    s2c,
+                    on_manual_save_success=send_preview,
+                    on_preview=_on_preview_cmd,
+                    on_backup=model_backup,
+                ):
+                    break
+
                 if not debug:
                     cur_time = time.time()
 
@@ -164,7 +144,7 @@ def trainerThread (s2c, c2s, e,
                             except Exception as e:
                                 print("Unable to execute program: %s" % (prog) )
 
-                    if not is_reached_goal:
+                    if not ctrl.is_reached_goal:
 
                         if model.get_iter() == 0:
                             io.log_info("")
@@ -177,91 +157,62 @@ def trainerThread (s2c, c2s, e,
                                 io.log_info("https://i.imgur.com/B7cmDCB.jpg")
                                 io.log_info("!!!")
 
-                        # CUDA Graph warmup: run warmup_iters without timing
-                        # This allows CUDA Graphs to be captured
-                        warmup_start = model.get_iter()
-                        for _ in range(cuda_graph_warmup_iters):
-                            iter, _ = model.train_one_iter()
-                            _record_train_loss()
-                            if model.get_iter() > warmup_start + cuda_graph_warmup_iters - 1:
-                                break
+                        # Warmup + timed train; stop early on target / queued close.
+                        timed = ctrl.run_train_group(s2c)
+                        is_reached_goal = ctrl.is_reached_goal
 
-                        # Now timed training
-                        iter, iter_time = model.train_one_iter()
-                        _record_train_loss()
-
-                        loss_history = model.get_loss_history()
-                        time_str = time.strftime("[%H:%M:%S]")
-                        if iter_time >= 10:
-                            loss_string = "{0}[#{1:06d}][{2:.5s}s]".format ( time_str, iter, '{:0.4f}'.format(iter_time) )
-                        else:
-                            loss_string = "{0}[#{1:06d}][{2:04d}ms]".format ( time_str, iter, int(iter_time*1000) )
-
-                        # Per-iter loss line (window stats are logged immediately on save).
-                        if len(loss_history) > 0:
-                            last_loss = loss_history[-1]
-                            if not hasattr(last_loss, '__iter__') or isinstance(last_loss, (np.number, float, int, str, bytes)):
-                                loss_values = [last_loss]
+                        if timed is not None:
+                            iter, iter_time = timed
+                            loss_history = model.get_loss_history()
+                            time_str = time.strftime("[%H:%M:%S]")
+                            if iter_time >= 10:
+                                loss_string = "{0}[#{1:06d}][{2:.5s}s]".format ( time_str, iter, '{:0.4f}'.format(iter_time) )
                             else:
-                                loss_values = last_loss
-                            for loss_value in loss_values:
-                                loss_string += "[%.4f]" % (loss_value)
+                                loss_string = "{0}[#{1:06d}][{2:04d}ms]".format ( time_str, iter, int(iter_time*1000) )
 
-                        if io.is_colab():
-                            io.log_info ('\r' + loss_string, end='')
-                        else:
-                            io.log_info (loss_string, end='\r')
+                            if len(loss_history) > 0:
+                                last_loss = loss_history[-1]
+                                if not hasattr(last_loss, '__iter__') or isinstance(last_loss, (np.number, float, int, str, bytes)):
+                                    loss_values = [last_loss]
+                                else:
+                                    loss_values = last_loss
+                                for loss_value in loss_values:
+                                    loss_string += "[%.4f]" % (loss_value)
 
-                        if model.get_iter() == 1:
-                            model_save(reason="initial_iter")
+                            if io.is_colab():
+                                io.log_info ('\r' + loss_string, end='')
+                            else:
+                                io.log_info (loss_string, end='\r')
 
-                        if model.get_target_iter() != 0 and model.is_reached_iter_goal():
-                            io.log_info ('Reached target iteration.')
-                            model_save(reason="target_reached")
-                            is_reached_goal = True
-                            io.log_info ('You can use preview now.')
-                
+                        if ctrl.should_stop:
+                            break
+
                 need_save = False
                 # Multiple elapsed intervals collapse to one save (single window consume).
                 while time.time() - last_save_time >= save_interval_min*60:
                     last_save_time += save_interval_min*60
                     need_save = True
                 
-                if not is_reached_goal and need_save:
-                    if model_save(reason="scheduled"):
+                if not ctrl.is_reached_goal and need_save:
+                    if ctrl.model_save(reason="scheduled"):
                         send_preview()
 
                 if i==0:
-                    if is_reached_goal:
+                    if ctrl.is_reached_goal:
                         model.pass_one_iter()
                     send_preview()
 
                 if debug:
                     time.sleep(0.005)
 
-                while not s2c.empty():
-                    input = s2c.get()
-                    op = input['op']
-                    if op == 'save':
-                        if model_save(reason="manual"):
-                            # Manual save: preview only after successful save.
-                            send_preview()
-                    elif op == 'backup':
-                        model_backup()
-                    elif op == 'preview':
-                        if is_reached_goal:
-                            model.pass_one_iter()
-                        send_preview()
-                    elif op == 'close':
-                        # Exit save: freeze current window, no extra train batch.
-                        model_save(reason="exit")
-                        i = -1
-                        break
-
-                if i == -1:
+                # Drain any commands that arrived during the train group.
+                if ctrl.process_commands(
+                    s2c,
+                    on_manual_save_success=send_preview,
+                    on_preview=_on_preview_cmd,
+                    on_backup=model_backup,
+                ):
                     break
-
-
 
             model.finalize()
 
@@ -274,6 +225,15 @@ def trainerThread (s2c, c2s, e,
         except Exception as e:
             print ('Error: %s' % (str(e)))
             traceback.print_exc()
+            try:
+                c2s.put({
+                    'op': 'error',
+                    'error': str(e),
+                    'error_type': type(e).__name__,
+                    'traceback': traceback.format_exc(),
+                })
+            except Exception:
+                pass
             try:
                 if 'model' in locals():
                     model.finalize()

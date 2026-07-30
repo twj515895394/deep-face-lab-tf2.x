@@ -131,14 +131,17 @@ class LossWindowTracker:
 
     def __init__(self) -> None:
         self._items: List[Any] = []
+        self._iters: List[Optional[int]] = []
+        self.degraded: bool = False
 
     def __len__(self) -> int:
         return len(self._items)
 
     def clear(self) -> None:
         self._items.clear()
+        self._iters.clear()
 
-    def append_loss(self, loss_item: Any) -> None:
+    def append_loss(self, loss_item: Any, iter_num: Optional[int] = None) -> None:
         if loss_item is None:
             return
         # Store a shallow copy for sequences so later mutation cannot rewrite the window.
@@ -146,15 +149,44 @@ class LossWindowTracker:
             self._items.append(list(loss_item))
         else:
             self._items.append(loss_item)
+        try:
+            self._iters.append(int(iter_num) if iter_num is not None else None)
+        except (TypeError, ValueError):
+            self._iters.append(None)
 
-    def append_from_model_history(self, history: Sequence[Any]) -> None:
+    def append_from_model_history(
+        self,
+        history: Sequence[Any],
+        iter_num: Optional[int] = None,
+    ) -> None:
         if history is None or len(history) == 0:
             return
-        self.append_loss(history[-1])
+        self.append_loss(history[-1], iter_num=iter_num)
 
     def freeze(self) -> List[Any]:
         """Return a frozen snapshot of the current window (do not commit)."""
         return list(self._items)
+
+    def freeze_iters(self) -> List[Optional[int]]:
+        return list(self._iters)
+
+    def iter_range_for_frozen(
+        self,
+        frozen: Sequence[Any],
+    ) -> Tuple[Optional[int], Optional[int]]:
+        """
+        Return (start_iter, end_iter) for a freeze snapshot.
+        Uses parallel iter markers recorded at append time.
+        """
+        n = len(frozen)
+        if n <= 0:
+            return None, None
+        # frozen is a prefix snapshot of _items at freeze time.
+        iters = self._iters[:n] if len(self._iters) >= n else self._iters
+        known = [i for i in iters if i is not None]
+        if not known:
+            return None, None
+        return int(known[0]), int(known[-1])
 
     def stats_for_frozen(self, frozen: Sequence[Any]) -> Optional[LossWindowStats]:
         return compute_loss_window_stats(frozen, start_index=0, end_index=None)
@@ -162,6 +194,7 @@ class LossWindowTracker:
     def commit(self) -> None:
         """Consume the window after a successful save."""
         self._items.clear()
+        self._iters.clear()
 
     def stats(self) -> Optional[LossWindowStats]:
         return self.stats_for_frozen(self._items)
@@ -172,19 +205,29 @@ def format_loss_window_log(
     iter_num: int,
     stats: Optional[LossWindowStats],
     channel_labels: Optional[Sequence[str]] = None,
+    start_iter: Optional[int] = None,
+    end_iter: Optional[int] = None,
+    window_incomplete: bool = False,
 ) -> str:
     """
     Structured multi-line save window log.
 
     Example:
-      [Save][scheduled] iter=12000 window=1000
+      [Save][scheduled] iter=12000 window=1000 range=11001..12000
         src mean=0.1234 median=0.1200 last=0.1180 min=0.1100 max=0.1500
         dst mean=0.0987 median=0.0970 last=0.0950 min=0.0900 max=0.1200
     """
-    if stats is None or stats.count <= 0:
-        return f"[Save][{reason}] iter={int(iter_num)} window=0 (empty)"
+    flags = []
+    if start_iter is not None and end_iter is not None:
+        flags.append(f"range={int(start_iter)}..{int(end_iter)}")
+    if window_incomplete:
+        flags.append("window_incomplete")
+    flag_suffix = (" " + " ".join(flags)) if flags else ""
 
-    lines = [f"[Save][{reason}] iter={int(iter_num)} window={stats.count}"]
+    if stats is None or stats.count <= 0:
+        return f"[Save][{reason}] iter={int(iter_num)} window=0 (empty){flag_suffix}"
+
+    lines = [f"[Save][{reason}] iter={int(iter_num)} window={stats.count}{flag_suffix}"]
     dim = len(stats.mean)
     if channel_labels is None:
         if dim == 2:

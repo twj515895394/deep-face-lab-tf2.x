@@ -1,5 +1,6 @@
 import multiprocessing
 import operator
+import os
 import pickle
 import traceback
 from pathlib import Path
@@ -20,6 +21,25 @@ class SampleLoader:
     _max_cache_size = 10
 
     @staticmethod
+    def _normalize_path_key(samples_path) -> str:
+        """
+        Unicode-safe cache key for faceset directories.
+
+        Uses pathlib / os.fspath so Chinese/space/non-ASCII paths stay Unicode
+        (never ANSI code page). Prefer resolve() so short/long Windows paths
+        collapse to one entry when possible.
+        """
+        try:
+            p = Path(os.fspath(samples_path))
+        except TypeError:
+            p = Path(str(samples_path))
+        try:
+            p = p.resolve()
+        except Exception:
+            pass
+        return os.fspath(p)
+
+    @staticmethod
     def clear_cache():
         if len(SampleLoader.samples_cache) > 0:
             cleared = len(SampleLoader.samples_cache)
@@ -28,6 +48,27 @@ class SampleLoader:
             gc.collect()
             return cleared
         return 0
+
+    @staticmethod
+    def invalidate_path(samples_path) -> int:
+        """
+        Drop cache entries for a faceset path (and short/long path aliases).
+        Required so Analyzer incremental sees add/delete on Unicode paths.
+        """
+        if not SampleLoader.samples_cache:
+            return 0
+        target = SampleLoader._normalize_path_key(samples_path)
+        raw = os.fspath(samples_path) if not isinstance(samples_path, Path) else os.fspath(Path(samples_path))
+        removed = 0
+        for key in list(SampleLoader.samples_cache.keys()):
+            try:
+                same = SampleLoader._normalize_path_key(key) == target
+            except Exception:
+                same = (key == target) or (key == raw)
+            if same or key == raw or key == target:
+                del SampleLoader.samples_cache[key]
+                removed += 1
+        return removed
 
     @staticmethod
     def _manage_cache_size():
@@ -54,14 +95,15 @@ class SampleLoader:
         """
         Return MPSharedList of samples
         """
-        samples_path = Path(samples_path)
+        samples_path = Path(os.fspath(samples_path))
         samples_cache = SampleLoader.samples_cache
+        cache_key = SampleLoader._normalize_path_key(samples_path)
 
-        if str(samples_path) not in samples_cache.keys():
+        if cache_key not in samples_cache.keys():
             SampleLoader._manage_cache_size()
-            samples_cache[str(samples_path)] = [None]*SampleType.QTY
+            samples_cache[cache_key] = [None]*SampleType.QTY
 
-        samples = samples_cache[str(samples_path)]
+        samples = samples_cache[cache_key]
 
         if            sample_type == SampleType.IMAGE:
             if  samples[sample_type] is None:

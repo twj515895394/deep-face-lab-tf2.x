@@ -82,20 +82,15 @@ def main(
                 return 7
 
     # Check faceset format and load samples.
-    # SampleLoader caches by path string; Analyzer must see adds/deletes so
-    # invalidate any cache entry for this faceset before load (Ticket 18).
+    # SampleLoader caches by path; Analyzer must see adds/deletes (Ticket 18)
+    # and must treat Chinese / short / long Windows paths as the same root.
     try:
-        cache = getattr(SampleLoader, "samples_cache", None)
-        if isinstance(cache, dict):
-            for key in list(cache.keys()):
-                try:
-                    if Path(key).resolve() == input_dir:
-                        del cache[key]
-                except Exception:
-                    if str(input_dir) == str(key):
-                        del cache[key]
+        SampleLoader.invalidate_path(input_dir)
     except Exception:
-        pass
+        try:
+            SampleLoader.clear_cache()
+        except Exception:
+            pass
 
     try:
         samples = SampleLoader.load(SampleType.FACE, input_dir)

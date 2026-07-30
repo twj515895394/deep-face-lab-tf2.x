@@ -7,7 +7,7 @@
 > 首轮实现 Commit：`43a3c437fee4454b54abb192727797dbbe20a4e7`  
 > Review R1 报告 Commit：`b3d7af4228e4e35c9d94ca9d9f3e7d152576b2de`  
 > Previous Head（R1 后）：`35c42c4379aaa387c9130d4941ec6a5982217ff6`  
-> Remediation Head：*（commit 后回填）*  
+> Remediation Head：`6ee5eceb2be9230f8e292364ec4a425e445c83d7`  
 > 分支：`codex/batch2-ticket15-config-contract`  
 > 环境：Windows 11 / Python 3.11.7（pyenv）  
 > `--options-json` 文档同步：**PASS / v1.1**（min/max 严格 `<` 语义已对齐）  

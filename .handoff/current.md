@@ -23,7 +23,7 @@ Ticket 14 最终实现：       37e99255e195d73dbd3720858ec1a93b4c8619cc
 Ticket 15 首轮实现：       43a3c437fee4454b54abb192727797dbbe20a4e7
 Ticket 15 Review R1：      b3d7af4228e4e35c9d94ca9d9f3e7d152576b2de
 Ticket 15 R1 前 HEAD：     35c42c4379aaa387c9130d4941ec6a5982217ff6
-Ticket 15 remediation：    （commit 后回填）
+Ticket 15 remediation：    6ee5eceb2be9230f8e292364ec4a425e445c83d7
 Ticket 15 工作分支：       codex/batch2-ticket15-config-contract
 ```
 

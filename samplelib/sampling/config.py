@@ -144,8 +144,9 @@ class SamplingConfig:
         min_weight = _safe_float(raw.get("min_sample_weight"), 0.5, 0.01, 100.0)
         max_weight = _safe_float(raw.get("max_sample_weight"), 2.0, 0.01, 100.0)
 
-        if min_weight > max_weight:
-            _warn("min_sample_weight > max_sample_weight; using defaults 0.5/2.0")
+        # Document contract: min_sample_weight must be strictly < max_sample_weight.
+        if min_weight >= max_weight:
+            _warn("min_sample_weight >= max_sample_weight; using defaults 0.5/2.0")
             min_weight = 0.5
             max_weight = 2.0
 
@@ -245,8 +246,9 @@ def split_sampling_mapping(
     for key, value in raw.items():
         if key in SAMPLING_SIDE_KEYS:
             if not isinstance(value, dict):
+                # Fixed prefix enables per-role warning isolation (R1-04).
                 warnings.append(
-                    f"Invalid sampling.{key} type {type(value).__name__}; "
+                    f"sampling.{key}: Invalid type {type(value).__name__}; "
                     f"expected object, side ignored"
                 )
                 continue
@@ -277,13 +279,19 @@ def parse_role_sampling_configs(
     Returns:
         base_config, side_configs (resolved), warnings, description of layout
         layout is one of: empty | base | sides | base+sides
+
+    Side validation warnings are prefixed with ``sampling.<role>:`` so Runtime can
+    isolate them per SRC/DST (R1-04). Base/global warnings have no role prefix.
     """
     base_raw, side_raw, warnings = split_sampling_mapping(raw)
     base = SamplingConfig.from_mapping(base_raw, warnings_out=warnings)
 
     sides: Dict[str, SamplingConfig] = {}
     for role, override in side_raw.items():
-        sides[role] = merge_sampling_configs(base, override, warnings_out=warnings)
+        side_warnings: List[str] = []
+        sides[role] = merge_sampling_configs(base, override, warnings_out=side_warnings)
+        for msg in side_warnings:
+            warnings.append(f"sampling.{role}: {msg}")
 
     if base_raw and sides:
         layout = "base+sides"

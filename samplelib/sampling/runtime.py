@@ -33,6 +33,7 @@ def build_sampling_runtime(
     legacy_uniform_yaw: bool = False,
     base_seed: Optional[int] = None,
     sampling_config: Optional[SamplingConfig] = None,
+    sampling_config_source: Optional[str] = None,
 ) -> SamplingRuntime:
     """
     Build SamplingRuntime for src or dst faceset directory, resolving metadata,
@@ -40,6 +41,8 @@ def build_sampling_runtime(
 
     Authority for side config:
       sampling_config argument if provided, else enhancement_config.sampling_config_for(role)
+    When SAEHD passes an explicit SamplingConfig, also pass sampling_config_source so
+    logs retain base/side provenance (R1-02).
     """
     role_key = str(role).strip().lower()
     if role_key not in ("src", "dst"):
@@ -54,7 +57,7 @@ def build_sampling_runtime(
         config_source = enhancement_config.sampling_config_source(role_key)
     else:
         sampling_cfg = sampling_config
-        config_source = "explicit"
+        config_source = sampling_config_source or "explicit"
 
     # Side seed wins; otherwise derive from model base seed with distinct SRC/DST offsets.
     if sampling_cfg.seed is None and base_seed is not None:
@@ -75,10 +78,9 @@ def build_sampling_runtime(
             f"training.enabled=false; metadata not loaded, using legacy."
         )
 
-    for warn in enhancement_config.config_warnings:
-        # Bound noise: only emit sampling-related warnings once per side at startup.
-        if "sampling" in warn.lower() or "mode" in warn.lower() or "fallback" in warn.lower():
-            io.log_info(f"[Sampling][{role_key}] config: {warn}")
+    # Per-role warning isolation (R1-04): do not leak src-only issues into dst logs.
+    for warn in enhancement_config.config_warnings_for(role_key):
+        io.log_info(f"[Sampling][{role_key}] config: {warn}")
 
     rt_meta: Optional[RuntimeMetadata] = None
     if sampling_enabled:

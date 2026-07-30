@@ -267,20 +267,6 @@ class ModelBase(object):
             try:
                 new_options = json.loads(self.options_json)
 
-                # Batch 2 keys at options root are unsupported (must live under enhancements).
-                # Never silently ignore — emit an explicit startup warning.
-                try:
-                    from core.enhancements.config import (
-                        detect_misplaced_batch2_top_level_keys,
-                        format_misplaced_batch2_keys_warning,
-                    )
-                    misplaced = detect_misplaced_batch2_top_level_keys(new_options)
-                    if misplaced:
-                        io.log_info(format_misplaced_batch2_keys_warning(misplaced))
-                except Exception:
-                    # Warning helper must not break options injection.
-                    pass
-
                 # 结构参数防护列表
                 structural_keys = {'resolution', 'archi', 'ae_dims', 'e_dims', 'd_dims', 'd_mask_dims', 'head_name'}
 
@@ -322,6 +308,20 @@ class ModelBase(object):
                 io.log_info(f"✅ [GUI_OPTIONS] 成功从 --options-json 动态解析并注入了 {injected_count} 项训练超参数")
             except Exception as e:
                 io.log_err(f"❌ [GUI_OPTIONS] 从 --options-json 解析配置失败: {e}")
+
+        # R1-01: detect misplaced Batch 2 keys on FINAL options (persisted + injected).
+        # Warn only — never auto-migrate/delete user config.
+        try:
+            from core.enhancements.config import (
+                detect_misplaced_batch2_top_level_keys,
+                format_misplaced_batch2_keys_warning,
+            )
+            misplaced = detect_misplaced_batch2_top_level_keys(self.options)
+            if misplaced:
+                io.log_info(format_misplaced_batch2_keys_warning(misplaced))
+        except Exception:
+            # Warning helper must not break legacy initialization.
+            pass
 
     def update_sample_for_preview(self, choose_preview_history=False, force_new=False):
         if self.sample_for_preview is None or choose_preview_history or force_new:

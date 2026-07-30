@@ -560,13 +560,13 @@ p_final = (1-uniform_mix) * p_weighted + uniform_mix * (1/N)
 | 硬范围 | `0.01 .. 100.0`（解析层） |
 | 状态 | `IMPLEMENTED` |
 
-必须满足：
+必须满足严格不等式：
 
 ```text
 min_sample_weight < max_sample_weight
 ```
 
-非法关系回安全默认并输出结构化 warning，不允许交换用户值后静默继续。
+`min > max` 与 `min == max` 均非法：回安全默认 `0.5 / 2.0` 并输出 warning，不允许交换用户值后静默继续。
 
 ### 8.9 `min_metadata_match_ratio`
 

@@ -185,6 +185,31 @@ class EnhancementConfig:
     def config_warnings(self) -> List[str]:
         return list(self._config_warnings)
 
+    def config_warnings_for(self, role: str) -> List[str]:
+        """Return warnings visible for a faceset role (R1-04).
+
+        - global warnings (no ``sampling.src:`` / ``sampling.dst:`` prefix) → both sides
+        - ``sampling.src:`` → src only
+        - ``sampling.dst:`` → dst only
+        """
+        role_key = str(role).strip().lower()
+        if role_key not in ("src", "dst"):
+            raise ValueError(f"Unknown sampling role {role!r}; expected 'src' or 'dst'")
+        prefix_src = "sampling.src:"
+        prefix_dst = "sampling.dst:"
+        visible: List[str] = []
+        for warn in self._config_warnings:
+            text = str(warn)
+            if text.startswith(prefix_src):
+                if role_key == "src":
+                    visible.append(text)
+            elif text.startswith(prefix_dst):
+                if role_key == "dst":
+                    visible.append(text)
+            else:
+                visible.append(text)
+        return visible
+
     def sampling_config_for(self, role: str) -> SamplingConfig:
         """Resolved SamplingConfig for a faceset role (src|dst).
 
@@ -260,3 +285,36 @@ class EnhancementConfig:
 
 def normalize_enhancement_config(raw_mapping: Any) -> EnhancementConfig:
     return EnhancementConfig.from_mapping(raw_mapping)
+
+
+def apply_interactive_sampling_base_update(
+    enhancements_dict: Mapping[str, Any],
+    *,
+    enable_meta_sampling: bool,
+    chosen_base_mode: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Update training gates + base sampling mode without dropping src/dst (R1-03).
+
+    Traditional interactive Override only edits base fields. Side overrides must be
+    preserved so re-enabling the dual gate restores the previous side config.
+    """
+    updated = copy.deepcopy(dict(enhancements_dict))
+    sampling = copy.deepcopy(updated.get("sampling") or {})
+    if not isinstance(sampling, dict):
+        sampling = {}
+
+    if enable_meta_sampling:
+        if chosen_base_mode is not None:
+            sampling["mode"] = chosen_base_mode
+    else:
+        sampling["mode"] = "legacy"
+
+    training = copy.deepcopy(updated.get("training") or {})
+    if not isinstance(training, dict):
+        training = {}
+    training["enabled"] = bool(enable_meta_sampling)
+    training["metadata_sampling"] = bool(enable_meta_sampling)
+
+    updated["training"] = training
+    updated["sampling"] = sampling
+    return updated

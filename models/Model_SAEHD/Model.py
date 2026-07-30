@@ -368,28 +368,27 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
             self.options['uniform_yaw'] = io.input_bool ("Uniform yaw distribution of samples", default_uniform_yaw, help_message='Helps to fix blurry side faces due to small amount of them in the faceset.')
 
             if ENHANCEMENTS_AVAILABLE and self.enhancements is not None:
+                from core.enhancements import apply_interactive_sampling_base_update
+
                 current_meta_sampling = self.enhancements.is_enabled("training.metadata_sampling")
                 enable_meta_sampling = io.input_bool ("Enable metadata sampling?", current_meta_sampling, help_message="Use faceset_metadata.v1.json to enable pose-balanced or quality-aware sampling.")
 
-                current_sampling_dict = self.enhancements.sampling_config.to_dict()
+                # R1-03: only edit base mode / gates; never drop sampling.src / sampling.dst.
+                chosen_mode = None
                 if enable_meta_sampling:
-                    current_mode = current_sampling_dict.get("mode", "quality_pose_balanced")
+                    current_mode = self.enhancements.sampling_config.mode.value
                     if current_mode == "legacy":
                         current_mode = "quality_pose_balanced"
                     mode_choices = ["legacy", "pose_balanced", "quality_pose_balanced"]
                     chosen_mode = io.input_str ("Sampling mode", current_mode, mode_choices, help_message="legacy: standard random/uniform_yaw. pose_balanced: weight rare head poses. quality_pose_balanced: weight pose + image quality.").lower()
-                    if chosen_mode in mode_choices:
-                        current_sampling_dict["mode"] = chosen_mode
-                else:
-                    current_sampling_dict["mode"] = "legacy"
+                    if chosen_mode not in mode_choices:
+                        chosen_mode = current_mode
 
-                training_dict = copy.deepcopy(self.enhancements.to_dict().get("training", {}))
-                training_dict["enabled"] = enable_meta_sampling
-                training_dict["metadata_sampling"] = enable_meta_sampling
-
-                updated_dict = self.enhancements.to_dict()
-                updated_dict["training"] = training_dict
-                updated_dict["sampling"] = current_sampling_dict
+                updated_dict = apply_interactive_sampling_base_update(
+                    self.enhancements.to_dict(),
+                    enable_meta_sampling=enable_meta_sampling,
+                    chosen_base_mode=chosen_mode if enable_meta_sampling else None,
+                )
 
                 self.enhancements = normalize_enhancement_config(updated_dict)
                 self.options["enhancements"] = self.enhancements.to_dict()
@@ -1188,8 +1187,11 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
             )
             # One authority: resolve side configs here and pass explicitly so SRC/DST
             # never silently share a single flat SamplingConfig by accident.
+            # Also pass sampling_config_source so startup logs keep base/side provenance (R1-02).
             src_sampling_cfg = enh_cfg.sampling_config_for("src")
+            src_config_source = enh_cfg.sampling_config_source("src")
             dst_sampling_cfg = enh_cfg.sampling_config_for("dst")
+            dst_config_source = enh_cfg.sampling_config_source("dst")
             model_seed = self.options.get("seed", 42)
 
             src_runtime = build_sampling_runtime(
@@ -1197,6 +1199,7 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
                 samples_path=training_data_src_path,
                 enhancement_config=enh_cfg,
                 sampling_config=src_sampling_cfg,
+                sampling_config_source=src_config_source,
                 legacy_uniform_yaw=self.options['uniform_yaw'] or self.pretrain,
                 base_seed=model_seed,
             )
@@ -1206,6 +1209,7 @@ Examples: df, liae, df-d, df-ud, liae-ud, ...
                 samples_path=training_data_dst_path,
                 enhancement_config=enh_cfg,
                 sampling_config=dst_sampling_cfg,
+                sampling_config_source=dst_config_source,
                 legacy_uniform_yaw=self.options['uniform_yaw'] or self.pretrain,
                 base_seed=model_seed,
             )

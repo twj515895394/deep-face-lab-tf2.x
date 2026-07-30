@@ -163,6 +163,46 @@ class TestBatch2SAEHDSamplingOptions(unittest.TestCase):
         self.assertIn("gates", src.startup_log)
         self.assertEqual(src.startup_log["requested_mode"], "quality_pose_balanced")
 
+    def test_saehd_explicit_sampling_config_preserves_config_source(self):
+        """R1-02: SAEHD-style explicit SamplingConfig must keep real config_source."""
+        cfg = EnhancementConfig.from_mapping({
+            "training": {"enabled": True, "metadata_sampling": True},
+            "sampling": {
+                "fallback_mode": "legacy_random",
+                "src": {"mode": "quality_pose_balanced"},
+                "dst": {"mode": "pose_balanced"},
+            },
+            "runtime": {"fallback_on_optional_error": True},
+        })
+        src_cfg = cfg.sampling_config_for("src")
+        src_source = cfg.sampling_config_source("src")
+        dst_cfg = cfg.sampling_config_for("dst")
+        dst_source = cfg.sampling_config_source("dst")
+
+        src_rt = build_sampling_runtime(
+            "src",
+            self.ordinary_dir,
+            cfg,
+            sampling_config=src_cfg,
+            sampling_config_source=src_source,
+        )
+        dst_rt = build_sampling_runtime(
+            "dst",
+            self.ordinary_dir,
+            cfg,
+            sampling_config=dst_cfg,
+            sampling_config_source=dst_source,
+        )
+        self.assertEqual(src_rt.startup_log["config_source"], "base+src_override")
+        self.assertEqual(dst_rt.startup_log["config_source"], "base+dst_override")
+        self.assertEqual(src_rt.resolution.requested_mode, "quality_pose_balanced")
+        self.assertEqual(dst_rt.resolution.requested_mode, "pose_balanced")
+        # Without source arg, explicit path would wrongly become "explicit"
+        bare = build_sampling_runtime(
+            "src", self.ordinary_dir, cfg, sampling_config=src_cfg
+        )
+        self.assertEqual(bare.startup_log["config_source"], "explicit")
+
     def test_misplaced_top_level_keys_detected(self):
         opts = {"training": {"enabled": True}, "sampling": {}, "batch_size": 8}
         keys = detect_misplaced_batch2_top_level_keys(opts)

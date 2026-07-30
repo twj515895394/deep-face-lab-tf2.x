@@ -3,7 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from core.enhancements import EnhancementConfig
+from core.enhancements import (
+    EnhancementConfig,
+    apply_interactive_sampling_base_update,
+    normalize_enhancement_config,
+)
 from samplelib.sampling.config import (
     SamplingConfig,
     SamplingMode,
@@ -197,10 +201,108 @@ class TestBatch2EnhancementSamplingSides(unittest.TestCase):
                 "src": "pose_balanced",
             }
         })
-        self.assertTrue(any("sampling.src" in w for w in cfg.config_warnings))
+        self.assertTrue(any(w.startswith("sampling.src:") for w in cfg.config_warnings))
         # Invalid side ignored → both sides use base
         self.assertEqual(cfg.sampling_config_for("src").mode, SamplingMode.POSE_BALANCED)
         self.assertEqual(cfg.sampling_config_for("dst").mode, SamplingMode.POSE_BALANCED)
+
+    def test_side_warning_isolation(self):
+        """R1-04: src invalid mode must not appear in dst warnings."""
+        cfg = EnhancementConfig.from_mapping({
+            "sampling": {
+                "src": {"mode": "wrong_mode"},
+                "dst": {"mode": "pose_balanced"},
+            }
+        })
+        src_warns = cfg.config_warnings_for("src")
+        dst_warns = cfg.config_warnings_for("dst")
+        self.assertTrue(any(w.startswith("sampling.src:") for w in src_warns))
+        self.assertFalse(any(w.startswith("sampling.src:") for w in dst_warns))
+        self.assertEqual(cfg.sampling_config_for("dst").mode, SamplingMode.POSE_BALANCED)
+        # Invalid src mode falls back to legacy for that side only
+        self.assertEqual(cfg.sampling_config_for("src").mode, SamplingMode.LEGACY)
+
+    def test_global_unknown_field_visible_to_both_sides(self):
+        cfg = EnhancementConfig.from_mapping({
+            "sampling": {"mode": "legacy", "not_a_field": 1},
+        })
+        self.assertTrue(any("not_a_field" in w for w in cfg.config_warnings_for("src")))
+        self.assertTrue(any("not_a_field" in w for w in cfg.config_warnings_for("dst")))
+
+    def test_min_max_equality_rejected(self):
+        """R1-05: min >= max must reset to defaults with warning."""
+        warnings = []
+        cfg = SamplingConfig.from_mapping(
+            {"min_sample_weight": 1.0, "max_sample_weight": 1.0},
+            warnings_out=warnings,
+        )
+        self.assertEqual(cfg.min_sample_weight, 0.5)
+        self.assertEqual(cfg.max_sample_weight, 2.0)
+        self.assertTrue(any("min_sample_weight >=" in w for w in warnings))
+
+    def test_min_max_equality_in_side_override_isolated(self):
+        cfg = EnhancementConfig.from_mapping({
+            "sampling": {
+                "min_sample_weight": 0.4,
+                "max_sample_weight": 3.0,
+                "src": {"min_sample_weight": 1.0, "max_sample_weight": 1.0},
+                "dst": {"mode": "pose_balanced"},
+            }
+        })
+        src = cfg.sampling_config_for("src")
+        dst = cfg.sampling_config_for("dst")
+        self.assertEqual(src.min_sample_weight, 0.5)
+        self.assertEqual(src.max_sample_weight, 2.0)
+        self.assertEqual(dst.min_sample_weight, 0.4)
+        self.assertEqual(dst.max_sample_weight, 3.0)
+        self.assertTrue(
+            any(w.startswith("sampling.src:") and ">=" in w for w in cfg.config_warnings)
+        )
+        self.assertFalse(
+            any(w.startswith("sampling.dst:") and ">=" in w for w in cfg.config_warnings)
+        )
+
+    def test_interactive_override_preserves_side_configs(self):
+        """R1-03: traditional Override must not drop sampling.src/dst."""
+        raw = {
+            "schema_version": 1,
+            "training": {"enabled": True, "metadata_sampling": True},
+            "sampling": {
+                "fallback_mode": "legacy_random",
+                "src": {"mode": "quality_pose_balanced", "seed": 11},
+                "dst": {"mode": "pose_balanced", "seed": 22},
+            },
+        }
+        cfg = EnhancementConfig.from_mapping(raw)
+        updated = apply_interactive_sampling_base_update(
+            cfg.to_dict(),
+            enable_meta_sampling=True,
+            chosen_base_mode="pose_balanced",
+        )
+        again = normalize_enhancement_config(updated)
+        self.assertEqual(again.sampling_config.mode, SamplingMode.POSE_BALANCED)
+        self.assertEqual(again.sampling_config_for("src").mode, SamplingMode.QUALITY_POSE_BALANCED)
+        self.assertEqual(again.sampling_config_for("src").seed, 11)
+        self.assertEqual(again.sampling_config_for("dst").mode, SamplingMode.POSE_BALANCED)
+        self.assertEqual(again.sampling_config_for("dst").seed, 22)
+
+        # Gate off still keeps side configs
+        closed = apply_interactive_sampling_base_update(
+            again.to_dict(),
+            enable_meta_sampling=False,
+        )
+        closed_cfg = normalize_enhancement_config(closed)
+        self.assertFalse(closed_cfg.is_enabled("training.metadata_sampling"))
+        self.assertEqual(closed_cfg.sampling_config.mode, SamplingMode.LEGACY)
+        self.assertEqual(
+            closed_cfg.sampling_config_for("src").mode,
+            SamplingMode.QUALITY_POSE_BALANCED,
+        )
+        self.assertEqual(closed_cfg.sampling_config_for("dst").seed, 22)
+        # roundtrip
+        final = EnhancementConfig.from_mapping(closed_cfg.to_dict())
+        self.assertIn("src", final.to_dict()["sampling"])
+        self.assertIn("dst", final.to_dict()["sampling"])
 
     def test_unknown_role_raises(self):
         cfg = EnhancementConfig.from_mapping({})
